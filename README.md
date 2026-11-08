@@ -24,39 +24,7 @@ The promo film is built with [HyperFrames](https://hyperframes.heygen.com) from 
 
 ## How it works
 
-```mermaid
-flowchart TB
-    BOOK["Your book<br/>EPUB, PDF or TXT"] --> UI
-
-    subgraph PC["Your computer (Apple Silicon), nothing leaves it"]
-        UI["Web UI + server<br/>app/main.py"]
-
-        subgraph TEXT["1. Text"]
-            PARSE["Split into chapters<br/>books.py"]
-            ANN["Label every line:<br/>speaker, emotion, pause, mood<br/>annotate.py"]
-            LLM[("Local LLM<br/>LM Studio")]
-        end
-
-        subgraph AUDIO["2. Audio"]
-            VOICE["Cast a voice per character<br/>and speak each line<br/>tts.py + VoxCPM2"]
-            BED["Music beds + sound effects<br/>MusicGen, AudioLDM"]
-            MIX["Mix chapter"]
-        end
-
-        DATA[("data/<br/>script, lines, MP3")]
-        SYNC["Sync over your network<br/>sync.py"]
-    end
-
-    PHONE["Android app<br/>offline playback, resume"]
-
-    UI --> PARSE --> ANN
-    ANN <--> LLM
-    ANN --> VOICE
-    ANN -->|"scene moods"| BED
-    VOICE --> MIX
-    BED --> MIX
-    MIX --> DATA --> SYNC <--> PHONE
-```
+![Audiocast architecture: book in, text pipeline, audio pipeline, sync to phone](docs/architecture.svg)
 
 ### Pipeline
 
