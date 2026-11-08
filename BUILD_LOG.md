@@ -130,3 +130,23 @@ Every build step gets an entry: what, why, commands, results, failures.
   1. *Mood "none" not acceptable.* The labeller wrote one MOOD line (often "none", or "calm") per chunk and never changed it. Now: the prompt no longer offers "none" (headings stay none); `annotate.fill_moods` runs a forced-choice call (`pick_mood`, enum of 12 moods, cannot answer none) for every chunk where the labeller gave one mood or none, and otherwise keeps its choices and fills gaps with the next real mood; `music.cues` keeps its calm fallback as a last resort. Live on Holmes ch1 (156 lines, 191 s): melancholy 8 / mysterious 114 / playful 34 lines -> 3 cues (0-277 s, 277-1057 s, 1058-1217 s est.). Before the change the whole chapter was none, then calm.
   2. *Pause in the middle of a sentence.* Measured on the old Holmes ch1 line cache: 27 of 130 lines had a 0.6-1.15 s silence INSIDE the line (the voice model stalls at commas/dashes); a paragraph break landing mid-sentence (drop-cap lines treated as a heading title) caused a few more, fixed by the text work. New `tts.tighten` shortens inner silence to 0.35 s and trims each clip's lead/tail to 0.1 s, applied per sentence piece in `speak`; result on the same lines: 27 -> 0 lines over 0.6 s, longest 1.15 -> 0.35 s, 15.0 -> 13.6 min, speech energy removed <= 0.05%. The cache key now contains `TIGHTEN`, so every line re-renders once. Not verified by ear.
   3. *Narrator vs the same person as a character.* In first-person stories the narrator IS a character: quotes were read in the designed "John Watson" voice and their tags ("I answered.") in the Narrator voice. `main.first_person_narrator` finds the character whose quotes sit next to "I said/answered/..." tags (>= 3 tags, >= 1.5x the runner-up) and `_apply_aliases` maps that name (and name variants such as "Watson", "John H. Watson") to Narrator, saved in aliases.json; a character can also be merged into Narrator by hand (Same person as... > Narrator). The narrator row lists who it also voices, with Undo (`DELETE /api/books/{id}/aliases/{name}`); new "Re-create script" button on the chapter page re-runs the analysis (needed to apply any of these to an existing script). Heuristic only: a first-person book with few "I said" tags is not detected; use the manual merge.
+
+## Evaluation (2026-11-07)
+
+Ran `.venv/bin/python -m pytest tests -v -rA` with no code changes: **84 passed, 0 failed, 0 skipped** (11 warnings, 206 s).
+
+| File | Passed | Failed |
+|---|---|---|
+| tests/test_annotate.py | 16 | 0 |
+| tests/test_api.py | 11 | 0 |
+| tests/test_books_pdf.py | 8 | 0 |
+| tests/test_music.py | 6 | 0 |
+| tests/test_sfx.py | 4 | 0 |
+| tests/test_sync.py | 24 | 0 |
+| tests/test_tts.py | 12 | 0 |
+| tests/test_upload.py | 3 | 0 |
+
+Notes:
+- `pytest tests` with the system/anaconda Python fails at collection (missing `soundfile`, `ebooklib`; FastAPI version mismatch in `app/sync.py`), and `.venv/bin/pytest` fails with `No module named 'app'`. Use `.venv/bin/python -m pytest tests`.
+- `scripts/lock_test.py` is collected by a bare `pytest` (not by `pytest tests`) and is not part of this run.
+- Live-model tests (`test_annotate_live_messy`, `test_voxcpm_worker_speaks_with_direction`) passed in this environment.
