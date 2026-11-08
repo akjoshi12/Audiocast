@@ -6,6 +6,12 @@ Upload an EPUB, PDF or TXT. A local LLM labels every line (who speaks, how they 
 
 Nothing leaves your computer except an optional Wikipedia lookup of title and author (never book text).
 
+## Demo
+
+<!-- Drag the demo video here when editing this file on GitHub -->
+
+The promo film is built with [HyperFrames](https://hyperframes.heygen.com) from `video/` (`cd video && npm run render`).
+
 ## How it works
 
 ```mermaid

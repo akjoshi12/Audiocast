@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      :root {
+        --ground: #0e0f13;
+        --panel: #181a21;
+        --ink: #f4efe6;
+        --dim: #8b8f9c;
+        --amber: #f5a524;
+        --teal: #4fd1c5;
+        --font-display: "Playfair Display", serif;
+        --font-ui: "Inter", sans-serif;
+        --font-mono: "JetBrains Mono", monospace;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--ground); }
+      #root { position: relative; width: 1920px; height: 1080px; background: var(--ground); color: var(--ink); font-family: var(--font-ui); }
+      .scene { position: absolute; inset: 0; }
+      .sc { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+
+      /* scene 1 */
+      #big { font-family: var(--font-display); text-align: center; max-width: 1500px; font-size: 130px; line-height: 1.1; font-weight: 700; letter-spacing: -0.03em; }
+      #chip { margin-top: 28px; font-family: var(--font-mono); font-size: 36px; color: var(--amber); border: 2px solid var(--amber); border-radius: 999px; padding: 10px 28px; }
+      #tag { position: absolute; bottom: 190px; font-size: 64px; font-weight: 700; letter-spacing: -0.02em; text-align: center; }
+      #tag span { color: var(--amber); }
+
+      /* scene 2 */
+      .h2 { font-size: 72px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 80px; }
+      #pipe { display: flex; align-items: center; gap: 0; }
+      .node { width: 280px; height: 200px; border-radius: 24px; background: var(--panel); border: 2px solid #2b2e38; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+      .node b { font-size: 46px; }
+      .node i { font-style: normal; font-family: var(--font-mono); font-size: 28px; color: var(--dim); }
+      .link { width: 70px; height: 4px; background: var(--amber); transform-origin: left center; }
+      #pipe-src { margin-top: 56px; font-size: 34px; color: var(--ink); }
+      #pipe-note { margin-top: 22px; font-family: var(--font-mono); font-size: 34px; color: var(--dim); }
+
+      /* scene 3 */
+      #script { width: 1500px; display: flex; flex-direction: column; gap: 28px; }
+      .ln { display: flex; align-items: center; gap: 36px; background: var(--panel); border-radius: 22px; padding: 30px 40px; }
+      .who { width: 300px; flex: none; font-weight: 700; font-size: 40px; }
+      .who.n { color: var(--teal); }
+      .who.m { color: var(--amber); }
+      .txt { flex: 1; font-family: var(--font-display); font-size: 44px; line-height: 1.25; }
+      .emo { flex: none; font-family: var(--font-mono); font-size: 28px; color: var(--dim); width: 330px; text-align: right; }
+
+
+      /* web demo */
+      #sww { flex-direction: row; gap: 90px; }
+      #wframe { width: 780px; height: 830px; border-radius: 18px; border: 4px solid #2b2e38; background: #fff; }
+      #web-vid { position: absolute; left: 179px; top: 129px; width: 772px; height: 822px; border-radius: 14px; object-fit: cover; z-index: 5; }
+      #wcaps { position: relative; width: 700px; height: 340px; }
+      #wcaps .cap b { font-size: 70px; }
+      /* demo */
+      #sdw { flex-direction: row; gap: 140px; }
+      #phone { width: 734px; height: 940px; border-radius: 56px; overflow: hidden; border: 6px solid #2b2e38; background: #000; }
+      #demo-vid { position: absolute; left: 149px; top: 76px; width: 722px; height: 928px; border-radius: 50px; object-fit: cover; z-index: 5; }
+      #caps { position: relative; width: 760px; height: 300px; }
+      .cap { position: absolute; left: 0; top: 0; }
+      .cap small { display: block; font-family: var(--font-mono); font-size: 30px; color: var(--amber); margin-bottom: 18px; }
+      .cap b { font-family: var(--font-display); font-size: 84px; line-height: 1.1; letter-spacing: -0.02em; }
+
+      /* scene 4 */
+      #stats { display: flex; gap: 56px; }
+      #zero { margin-top: 90px; font-family: var(--font-mono); font-size: 38px; color: var(--teal); }
+      .stat { text-align: center; width: 390px; }
+      .stat b { display: block; font-family: var(--font-display); font-size: 150px; line-height: 1; color: var(--amber); }
+      .stat span { display: block; margin-top: 18px; font-size: 34px; color: var(--ink); line-height: 1.3; }
+
+      /* scene 5 */
+      #brand { font-family: var(--font-display); font-size: 200px; font-weight: 700; letter-spacing: -0.03em; }
+      #brand span { color: var(--amber); }
+      #sub { margin-top: 18px; font-size: 52px; color: var(--dim); }
+      #url { margin-top: 70px; font-family: var(--font-mono); font-size: 46px; color: var(--ground); background: var(--amber); border-radius: 18px; padding: 22px 44px; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="75.6" data-width="1920" data-height="1080">
+
+      <audio id="music" src="assets/music.wav" data-start="0" data-duration="75.6" data-track-index="9" data-volume="1.2"></audio>
+
+      <div id="s1" class="scene clip" data-start="0" data-duration="6" data-track-index="1">
+        <div class="sc" id="s1w">
+          <h1 id="big">What the deuce is it to me?</h1>
+          <div id="chip">Sherlock Holmes · impatient, dismissive</div>
+          <div id="tag">Every character. <span>Their own voice.</span></div>
+        </div>
+      </div>
+
+      <div id="s2" class="scene clip" data-start="6" data-duration="9" data-track-index="1">
+        <div class="sc" id="s2w">
+          <div class="h2">Ebook in. Full-cast audio out.</div>
+          <div id="pipe">
+            <div class="node" id="n1"><b>Parse</b><i>26 chapters</i></div><div class="link" id="l1"></div>
+            <div class="node" id="n2"><b>Annotate</b><i>49 lines·104 s</i></div><div class="link" id="l2"></div>
+            <div class="node" id="n3"><b>Cast</b><i>45 voices cast</i></div><div class="link" id="l3"></div>
+            <div class="node" id="n4"><b>Render</b><i>2.5× real time</i></div><div class="link" id="l4"></div>
+            <div class="node" id="n5"><b>Mix</b><i>music + sfx</i></div>
+          </div>
+          <div id="pipe-src">The Martian ch. 1: 16.8 min of audio in 6.6 min</div><div id="pipe-note">The LLM labels segments. It never rewrites your book.</div>
+        </div>
+      </div>
+
+      <div id="s3" class="scene clip" data-start="15" data-duration="7" data-track-index="1">
+        <div class="sc" id="s3w">
+          <div class="h2">A script, line by line</div>
+          <div id="script">
+            <div class="ln" id="ln1"><div class="who n">Narrator</div><div class="txt">“he said, smiling at my expression of surprise.”</div><div class="emo">calm</div></div>
+            <div class="ln" id="ln2"><div class="who m">Sherlock Holmes</div><div class="txt">“You appear to be astonished,”</div><div class="emo">amused, matter-of-fact</div></div>
+            <div class="ln" id="ln3"><div class="who m">Sherlock Holmes</div><div class="txt">“Now that I do know it I shall do my best to forget it.”</div><div class="emo">amused, matter-of-fact</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="sw" class="scene clip" data-start="22" data-duration="23.6" data-track-index="1">
+        <div class="sc" id="sww">
+          <div id="wframe"></div>
+          <div id="wcaps">
+            <div class="cap" id="wc0"><small>WEB APP · LIVE RECORDING</small><b>Every book, in one library</b></div>
+            <div class="cap" id="wc1"><small>WEB APP · LIVE RECORDING</small><b>Every chapter, scripted and rendered</b></div>
+            <div class="cap" id="wc2"><small>WEB APP · LIVE RECORDING</small><b>118 chapters. One click each.</b></div>
+            <div class="cap" id="wc3"><small>WEB APP · LIVE RECORDING</small><b>A designed voice per character. Preview each.</b></div>
+            <div class="cap" id="wc4"><small>WEB APP · LIVE RECORDING</small><b>Chapter 2: 3 voices, 130 lines, an emotion on each</b></div>
+          </div>
+        </div>
+      </div>
+      <video id="web-vid" class="clip" data-start="22.4" data-duration="23" data-track-index="2" src="assets/web-demo.mp4" muted playsinline></video>
+
+      <div id="sd" class="scene clip" data-start="45.6" data-duration="17.5" data-track-index="1">
+        <div class="sc" id="sdw">
+          <div id="phone"></div>
+          <div id="caps">
+            <div class="cap" id="cap0"><small>ANDROID APP · REAL RECORDING</small><b>Your library, on your phone</b></div>
+            <div class="cap" id="cap1"><small>ANDROID APP · REAL RECORDING</small><b>Chapters. Resume where you stopped.</b></div>
+            <div class="cap" id="cap2"><small>ANDROID APP · REAL RECORDING</small><b>Speed, sleep timer, chapter list</b></div>
+            <div class="cap" id="cap3"><small>ANDROID APP · REAL RECORDING</small><b>Syncs over Wi-Fi</b></div>
+          </div>
+        </div>
+      </div>
+
+      <video id="demo-vid" class="clip" data-start="45.9" data-duration="17.2" data-track-index="2" src="assets/phone-demo.mp4" muted playsinline></video>
+
+      <div id="s4" class="scene clip" data-start="63.1" data-duration="7.5" data-track-index="1">
+        <div class="sc" id="s4w">
+          <div id="stats">
+            <div class="stat"><b id="c1">0</b><span>chapters rendered to audio</span></div>
+            <div class="stat"><b id="c2">0</b><span>hours of full-cast audiobook</span></div>
+            <div class="stat"><b id="c3">0</b><span>lines labelled by a local LLM</span></div>
+            <div class="stat"><b id="c4">0</b><span>character voices cast</span></div>
+          </div>
+          <div id="zero">0 bytes of book text ever leave your machine</div>
+        </div>
+      </div>
+
+      <div id="s5" class="scene clip" data-start="70.6" data-duration="5" data-track-index="1">
+        <div class="sc" id="s5w">
+          <div id="brand">Audio<span>cast</span></div>
+          <div id="sub">Local. Private. Open source. Android player included.</div>
+          <div id="url">github.com/akjoshi12/Audiocast</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      const E = "power3.out";
+      const show = (id, at, out) => {
+        tl.fromTo(id, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: E }, at);
+        tl.to(id, { opacity: 0, duration: 0.3, ease: "power2.in" }, out - 0.3);
+      };
+
+      // scene 1 (0-6)
+      tl.to("#s1w", { opacity: 0, duration: 0.3, ease: "power2.in" }, 5.7);
+      tl.fromTo("#big", { scale: 0.94 }, { scale: 1, duration: 0.8, ease: "power4.out" }, 0);
+      tl.fromTo("#chip", { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: E }, 1.4);
+      tl.fromTo("#tag", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7, ease: E }, 3);
+
+      // scene 2 (6-15)
+      show("#s2w", 6, 15);
+      ["n1", "n2", "n3", "n4", "n5"].forEach((n, i) => {
+        const t = 7 + i * 0.85;
+        tl.fromTo("#" + n, { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: E }, t);
+        if (i < 4) tl.fromTo("#l" + (i + 1), { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power2.inOut" }, t + 0.5);
+      });
+      tl.fromTo("#pipe-src", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: E }, 10.9);
+      tl.fromTo("#pipe-note", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: E }, 11.4);
+
+      // scene 3 (15-22)
+      show("#s3w", 15, 22);
+      ["ln1", "ln2", "ln3"].forEach((n, i) =>
+        tl.fromTo("#" + n, { x: -60, opacity: 0 }, { x: 0, opacity: 1, duration: 0.6, ease: E }, 15.7 + i * 1.2));
+
+      // web demo (22-45.6)
+      show("#sww", 22, 45.6);
+      tl.fromTo("#web-vid", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: E }, 22.4);
+      tl.to("#web-vid", { opacity: 0, duration: 0.3, ease: "power2.in" }, 45.1);
+      [[0, 3.2], [3.2, 9.2], [9.2, 13.2], [13.2, 16.4], [16.4, 23]].forEach(([a, b], i) => {
+        tl.fromTo("#wc" + i, { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.4, ease: E }, 22.4 + a);
+        if (i < 4) tl.to("#wc" + i, { opacity: 0, duration: 0.25 }, 22.4 + b - 0.25);
+      });
+
+      // phone demo (45.6-63.1)
+      show("#sdw", 45.6, 63.1);
+      tl.fromTo("#demo-vid", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: E }, 45.9);
+      tl.to("#demo-vid", { opacity: 0, duration: 0.3, ease: "power2.in" }, 62.8);
+      tl.fromTo("#phone", { y: 60, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7, ease: E }, 45.8);
+      [[0, 3], [3, 9.5], [9.5, 14.9], [14.9, 17.3]].forEach(([a, b], i) => {
+        tl.fromTo("#cap" + i, { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.4, ease: E }, 45.9 + a);
+        if (i < 3) tl.to("#cap" + i, { opacity: 0, duration: 0.25 }, 45.9 + b - 0.25);
+      });
+
+      // stats (63.1-70.6)
+      show("#s4w", 63.1, 70.6);
+      const count = (id, to, at, dec) => {
+        const o = { v: 0 };
+        tl.to(o, { v: to, duration: 1.8, ease: "power2.out", onUpdate: () => (document.getElementById(id).textContent = dec ? o.v.toFixed(1) : Math.round(o.v).toLocaleString("en-US")) }, at);
+      };
+      tl.fromTo(".stat", { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: E, stagger: 0.2 }, 63.5);
+      count("c1", 15, 63.7); count("c2", 4.5, 63.9, true); count("c3", 2209, 64.1); count("c4", 45, 64.3);
+      tl.to("#stats", { scale: 1.03, duration: 3.8, ease: "none" }, 66.8);
+      tl.fromTo("#zero", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: E }, 66.4);
+
+      // end card (70.6-75.6)
+      tl.fromTo("#s5w", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: E }, 70.6);
+      tl.fromTo("#brand", { y: 40, scale: 0.95, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.8, ease: "power4.out" }, 70.8);
+      tl.fromTo("#sub", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: E }, 71.8);
+      tl.fromTo("#url", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: E }, 72.6);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
