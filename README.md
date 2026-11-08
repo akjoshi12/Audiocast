@@ -25,41 +25,37 @@ The promo film is built with [HyperFrames](https://hyperframes.heygen.com) from 
 ## How it works
 
 ```mermaid
-flowchart LR
-    subgraph PC["Your computer (Apple Silicon)"]
-        UI["Web UI<br/>app/static/index.html"]
-        API["FastAPI server<br/>app/main.py :8000"]
-        BOOKS["Book parser<br/>app/books.py"]
-        ANN["Script annotator<br/>app/annotate.py"]
-        LLM[("LM Studio :1234<br/>local LLM")]
-        TTS["Voice casting + TTS<br/>app/tts.py"]
-        VOX["VoxCPM2 worker<br/>app/vox_worker.py"]
-        MUS["Music beds<br/>app/music.py (MusicGen)"]
-        SFX["Sound effects<br/>app/sfx.py (AudioLDM)"]
-        MIX["Chapter mix<br/>voice + music + sfx"]
-        DATA[("data/ book folders<br/>script.json, lines/, audio")]
-        SYNC["Sync service<br/>app/sync.py (LAN, mDNS)"]
-        WIKI["Optional lookup<br/>app/lookup.py"]
-    end
-    PHONE["Android app<br/>Library, offline playback,<br/>resume position"]
+flowchart TB
+    BOOK["Your book<br/>EPUB, PDF or TXT"] --> UI
 
-    UI -->|"upload / queue jobs"| API
-    API --> BOOKS
-    BOOKS -->|"chapters"| DATA
-    API --> ANN
-    ANN <-->|"label segments"| LLM
-    ANN -->|"script.json"| DATA
-    API --> TTS
-    TTS --> VOX
-    TTS --> MUS
-    TTS --> SFX
-    VOX --> MIX
-    MUS --> MIX
-    SFX --> MIX
-    MIX -->|"chapter audio"| DATA
-    API -.->|"title, author only"| WIKI
-    DATA --> SYNC
-    SYNC <-->|"pair token, download, positions"| PHONE
+    subgraph PC["Your computer (Apple Silicon), nothing leaves it"]
+        UI["Web UI + server<br/>app/main.py"]
+
+        subgraph TEXT["1. Text"]
+            PARSE["Split into chapters<br/>books.py"]
+            ANN["Label every line:<br/>speaker, emotion, pause, mood<br/>annotate.py"]
+            LLM[("Local LLM<br/>LM Studio")]
+        end
+
+        subgraph AUDIO["2. Audio"]
+            VOICE["Cast a voice per character<br/>and speak each line<br/>tts.py + VoxCPM2"]
+            BED["Music beds + sound effects<br/>MusicGen, AudioLDM"]
+            MIX["Mix chapter"]
+        end
+
+        DATA[("data/<br/>script, lines, MP3")]
+        SYNC["Sync over your network<br/>sync.py"]
+    end
+
+    PHONE["Android app<br/>offline playback, resume"]
+
+    UI --> PARSE --> ANN
+    ANN <--> LLM
+    ANN --> VOICE
+    ANN -->|"scene moods"| BED
+    VOICE --> MIX
+    BED --> MIX
+    MIX --> DATA --> SYNC <--> PHONE
 ```
 
 ### Pipeline

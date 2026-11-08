@@ -57,7 +57,7 @@
       /* demo */
       #sdw { flex-direction: row; gap: 140px; }
       #phone { width: 734px; height: 940px; border-radius: 56px; overflow: hidden; border: 6px solid #2b2e38; background: #000; }
-      #demo-vid { position: absolute; left: 149px; top: 76px; width: 722px; height: 928px; border-radius: 50px; object-fit: cover; z-index: 5; }
+      #demo-vid { position: absolute; left: 149px; top: 76px; width: 722px; height: 928px; border-radius: 50px; object-fit: cover; z-index: 5; clip-path: inset(46px 0 0 0); }
       #caps { position: relative; width: 760px; height: 300px; }
       .cap { position: absolute; left: 0; top: 0; }
       .cap small { display: block; font-family: var(--font-mono); font-size: 30px; color: var(--amber); margin-bottom: 18px; }
@@ -75,22 +75,68 @@
       #brand span { color: var(--amber); }
       #sub { margin-top: 18px; font-size: 52px; color: var(--dim); }
       #url { margin-top: 70px; font-family: var(--font-mono); font-size: 46px; color: var(--ground); background: var(--amber); border-radius: 18px; padding: 22px 44px; }
+
+      /* intro dialogue */
+      #s1w { justify-content: flex-start; padding-top: 70px; }
+      #chip { margin-top: 0; }
+      #dlg { margin-top: 44px; width: 1560px; display: flex; flex-direction: column; gap: 22px; }
+      .dl { display: flex; align-items: center; gap: 36px; background: var(--panel); border-radius: 22px; padding: 24px 40px; }
+      .dl .who { width: 300px; }
+      .dl .txt { font-size: 50px; }
+      .dl .emo { width: 300px; }
+      #tag { bottom: 70px; }
+
+      /* eval scenes */
+      .sub { font-family: var(--font-mono); font-size: 30px; color: var(--dim); margin: -50px 0 50px; text-align: center; max-width: 1600px; }
+      #fid { display: flex; gap: 110px; align-items: center; }
+      #bars { width: 1000px; display: flex; flex-direction: column; gap: 18px; }
+      .br { display: flex; align-items: center; gap: 24px; }
+      .br .l { width: 250px; font-size: 32px; color: var(--ink); }
+      .br .tr { flex: 1; height: 38px; background: var(--panel); border-radius: 10px; overflow: hidden; }
+      .br .f { height: 100%; background: var(--teal); border-radius: 10px; transform-origin: left center; }
+      .br .f.h { background: var(--amber); }
+      .br .v { width: 110px; text-align: right; font-family: var(--font-mono); font-size: 32px; color: var(--ink); }
+      #axis { margin-top: 6px; font-family: var(--font-mono); font-size: 28px; color: var(--dim); }
+      .big2 { text-align: left; }
+      .big2 b { display: block; font-family: var(--font-display); font-size: 230px; line-height: 1; color: var(--amber); }
+      .big2 span { display: block; margin-top: 14px; font-size: 38px; line-height: 1.3; max-width: 520px; }
+      .big2 i { display: block; margin-top: 22px; font-style: normal; font-family: var(--font-mono); font-size: 30px; color: var(--dim); max-width: 520px; line-height: 1.4; }
+      #acc { display: flex; gap: 100px; align-items: center; }
+      #accr { width: 1000px; display: flex; flex-direction: column; gap: 28px; }
+      .kv { display: flex; align-items: center; gap: 36px; background: var(--panel); border-radius: 22px; padding: 28px 40px; }
+      .kv b { width: 250px; flex: none; font-family: var(--font-display); font-size: 70px; color: var(--teal); }
+      .kv b.a { color: var(--amber); }
+      .kv span { font-size: 38px; line-height: 1.3; }
+      #stats3 .stat b { font-size: 120px; white-space: nowrap; }
+      #foot3 { margin-top: 70px; font-family: var(--font-mono); font-size: 32px; color: var(--dim); }
+      #lim { width: 1600px; display: flex; flex-direction: column; gap: 20px; }
+      #lim .ln { padding: 22px 40px; }
+      #lim .who { width: 240px; color: var(--amber); }
+      #lim .txt { font-family: var(--font-ui); font-size: 40px; }
+      #foot4 { margin-top: 44px; font-family: var(--font-mono); font-size: 32px; color: var(--teal); }
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-start="0" data-duration="75.6" data-width="1920" data-height="1080">
+    <div id="root" data-composition-id="main" data-start="0" data-duration="114.1" data-width="1920" data-height="1080">
 
-      <audio id="music" src="assets/music.wav" data-start="0" data-duration="75.6" data-track-index="9" data-volume="1.2"></audio>
+      <audio id="voice" src="assets/bennets.wav" data-start="0.2" data-duration="9.14" data-track-index="8" data-volume="1"></audio>
+      <audio id="music" src="assets/music.wav" data-start="0" data-duration="75.6" data-track-index="9" data-volume="0.7" data-fade-out="2"></audio>
+      <audio id="music2" src="assets/music.wav" data-start="75.6" data-duration="38.5" data-track-index="10" data-volume="0.7" data-fade-in="2" data-fade-out="3"></audio>
 
-      <div id="s1" class="scene clip" data-start="0" data-duration="6" data-track-index="1">
+      <div id="s1" class="scene clip" data-start="0" data-duration="13" data-track-index="1">
         <div class="sc" id="s1w">
-          <h1 id="big">What the deuce is it to me?</h1>
-          <div id="chip">Sherlock Holmes · impatient, dismissive</div>
+          <div id="chip">Pride and Prejudice · Chapter I · rendered by Audiocast</div>
+          <div id="dlg">
+            <div class="dl" id="d1"><div class="who m">Mrs. Bennet</div><div class="txt">“My dear Mr. Bennet, have you heard that Netherfield Park is let at last?”</div><div class="emo">eager, excited</div></div>
+            <div class="dl" id="d2"><div class="who n">Mr. Bennet</div><div class="txt">“What is his name?”</div><div class="emo">dry, curious</div></div>
+            <div class="dl" id="d3"><div class="who m">Mrs. Bennet</div><div class="txt">“Bingley.”</div><div class="emo">excited</div></div>
+            <div class="dl" id="d4"><div class="who n">Mr. Bennet</div><div class="txt">“Is he married or single?”</div><div class="emo">dry, curious</div></div>
+          </div>
           <div id="tag">Every character. <span>Their own voice.</span></div>
         </div>
       </div>
 
-      <div id="s2" class="scene clip" data-start="6" data-duration="9" data-track-index="1">
+      <div id="s2" class="scene clip" data-start="13" data-duration="9" data-track-index="1">
         <div class="sc" id="s2w">
           <div class="h2">Ebook in. Full-cast audio out.</div>
           <div id="pipe">
@@ -100,11 +146,11 @@
             <div class="node" id="n4"><b>Render</b><i>2.5× real time</i></div><div class="link" id="l4"></div>
             <div class="node" id="n5"><b>Mix</b><i>music + sfx</i></div>
           </div>
-          <div id="pipe-src">The Martian ch. 1: 16.8 min of audio in 6.6 min</div><div id="pipe-note">The LLM labels segments. It never rewrites your book.</div>
+          <div id="pipe-note">The LLM labels segments. It never rewrites your book.</div>
         </div>
       </div>
 
-      <div id="s3" class="scene clip" data-start="15" data-duration="7" data-track-index="1">
+      <div id="s3" class="scene clip" data-start="22" data-duration="7" data-track-index="1">
         <div class="sc" id="s3w">
           <div class="h2">A script, line by line</div>
           <div id="script">
@@ -115,7 +161,7 @@
         </div>
       </div>
 
-      <div id="sw" class="scene clip" data-start="22" data-duration="23.6" data-track-index="1">
+      <div id="sw" class="scene clip" data-start="29" data-duration="23.6" data-track-index="1">
         <div class="sc" id="sww">
           <div id="wframe"></div>
           <div id="wcaps">
@@ -127,9 +173,9 @@
           </div>
         </div>
       </div>
-      <video id="web-vid" class="clip" data-start="22.4" data-duration="23" data-track-index="2" src="assets/web-demo.mp4" muted playsinline></video>
+      <video id="web-vid" class="clip" data-start="29.4" data-duration="23" data-track-index="2" src="assets/web-demo.mp4" muted playsinline></video>
 
-      <div id="sd" class="scene clip" data-start="45.6" data-duration="17.5" data-track-index="1">
+      <div id="sd" class="scene clip" data-start="52.6" data-duration="17.5" data-track-index="1">
         <div class="sc" id="sdw">
           <div id="phone"></div>
           <div id="caps">
@@ -141,9 +187,9 @@
         </div>
       </div>
 
-      <video id="demo-vid" class="clip" data-start="45.9" data-duration="17.2" data-track-index="2" src="assets/phone-demo.mp4" muted playsinline></video>
+      <video id="demo-vid" class="clip" data-start="52.9" data-duration="17.2" data-track-index="2" src="assets/phone-demo.mp4" muted playsinline></video>
 
-      <div id="s4" class="scene clip" data-start="63.1" data-duration="7.5" data-track-index="1">
+      <div id="s4" class="scene clip" data-start="70.1" data-duration="7.5" data-track-index="1">
         <div class="sc" id="s4w">
           <div id="stats">
             <div class="stat"><b id="c1">0</b><span>chapters rendered to audio</span></div>
@@ -155,7 +201,68 @@
         </div>
       </div>
 
-      <div id="s5" class="scene clip" data-start="70.6" data-duration="5" data-track-index="1">
+      <div id="e1" class="scene clip" data-start="77.6" data-duration="8" data-track-index="1">
+        <div class="sc" id="e1w">
+          <div class="h2">Does it say what the book says?</div>
+          <div class="sub">Every rendered line transcribed by Whisper small.en · 596 lines · 71 min of audio</div>
+          <div id="fid">
+            <div id="bars">
+              <div class="br"><div class="l">P&amp;P Ch. I</div><div class="tr"><div class="f" id="f1"></div></div><div class="v">95.5%</div></div>
+              <div class="br"><div class="l">P&amp;P Ch. II</div><div class="tr"><div class="f" id="f2"></div></div><div class="v">97.3%</div></div>
+              <div class="br"><div class="l">P&amp;P Ch. III</div><div class="tr"><div class="f" id="f3"></div></div><div class="v">97.4%</div></div>
+              <div class="br"><div class="l">Holmes sec. I</div><div class="tr"><div class="f" id="f4"></div></div><div class="v">98.3%</div></div>
+              <div class="br"><div class="l">Holmes sec. II</div><div class="tr"><div class="f" id="f5"></div></div><div class="v">98.5%</div></div>
+              <div class="br"><div class="l">Holmes sec. III</div><div class="tr"><div class="f" id="f6"></div></div><div class="v">98.5%</div></div>
+              <div id="axis">bars start at 90%</div>
+            </div>
+            <div class="big2" id="b2"><b>97.6%</b><span>mean word match over 6 chapters</span><i>strict 97.3% · pooled over 12,058 words 98.0%</i></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="e2" class="scene clip" data-start="85.6" data-duration="7.5" data-track-index="1">
+        <div class="sc" id="e2w">
+          <div class="h2">Does the right character speak?</div>
+          <div class="sub">Pride and Prejudice Ch. I · 33 speech lines · labelled by hand, then compared</div>
+          <div id="acc">
+            <div class="big2" id="b3"><b>97.0%</b><span>32 of 33 lines given to the right speaker</span><i>one person, one chapter, one run</i></div>
+            <div id="accr">
+              <div class="kv" id="k1"><b>21 / 21</b><span>unattributed back-and-forth lines, all correct</span></div>
+              <div class="kv" id="k2"><b class="a">1 error</b><span>an illustration caption that leaked in from Chapter II</span></div>
+              <div class="kv" id="k3"><b>32 / 32</b><span>once that caption is excluded</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="e3" class="scene clip" data-start="93.1" data-duration="7.5" data-track-index="1">
+        <div class="sc" id="e3w">
+          <div class="h2">Speed and size</div>
+          <div id="stats3" style="display:flex;gap:56px">
+            <div class="stat"><b>0.61×</b><span>real-time factor, voice rendering alone</span></div>
+            <div class="stat"><b>1.15×</b><span>full pipeline, 1,081-word chapter: 413 s of audio in 477 s</span></div>
+            <div class="stat"><b>54 GB</b><span>peak system memory, M4 Max with 64 GB</span></div>
+            <div class="stat"><b>99.1%</b><span>word match on a 3,606-character line, no failures</span></div>
+          </div>
+          <div id="foot3">Qwen 27B in LM Studio · VoxCPM2 · single runs</div>
+        </div>
+      </div>
+
+      <div id="e4" class="scene clip" data-start="100.6" data-duration="8.5" data-track-index="1">
+        <div class="sc" id="e4w">
+          <div class="h2">Where it still breaks</div>
+          <div id="lim">
+            <div class="ln" id="m1"><div class="who">Markup</div><div class="txt">Gutenberg [Illustration] lines are read aloud as prose</div></div>
+            <div class="ln" id="m2"><div class="who">Headings</div><div class="txt">TXT chapters found for 6 of 14 heading styles</div></div>
+            <div class="ln" id="m3"><div class="who">EPUB</div><div class="txt">Footnotes and contents pages get spoken</div></div>
+            <div class="ln" id="m4"><div class="who">Long text</div><div class="txt">Hard-wrapped text near 300k characters fails (HTTP 400)</div></div>
+            <div class="ln" id="m5"><div class="who">Cast</div><div class="txt">One character can get two names and two voices</div></div>
+          </div>
+          <div id="foot4">None fixed yet · full write-up in EVAL.md</div>
+        </div>
+      </div>
+
+      <div id="s5" class="scene clip" data-start="109.1" data-duration="5" data-track-index="1">
         <div class="sc" id="s5w">
           <div id="brand">Audio<span>cast</span></div>
           <div id="sub">Local. Private. Open source. Android player included.</div>
@@ -173,62 +280,89 @@
         tl.to(id, { opacity: 0, duration: 0.3, ease: "power2.in" }, out - 0.3);
       };
 
-      // scene 1 (0-6)
-      tl.to("#s1w", { opacity: 0, duration: 0.3, ease: "power2.in" }, 5.7);
-      tl.fromTo("#big", { scale: 0.94 }, { scale: 1, duration: 0.8, ease: "power4.out" }, 0);
-      tl.fromTo("#chip", { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: E }, 1.4);
-      tl.fromTo("#tag", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7, ease: E }, 3);
+      // intro (0-13): the Bennets, voice starts at 0.2
+      tl.to("#s1w", { opacity: 0, duration: 0.3, ease: "power2.in" }, 12.7);
+      const dl = (id, at) => tl.fromTo(id, { x: -50, opacity: 0 }, { x: 0, opacity: 1, duration: 0.4, ease: E }, at);
+      dl("#d2", 4.8); dl("#d3", 7.0); dl("#d4", 7.9);
+      tl.to("#d1", { opacity: 0.5, duration: 0.3 }, 4.8);
+      tl.to("#d2", { opacity: 0.5, duration: 0.3 }, 7.0);
+      tl.to("#d3", { opacity: 0.5, duration: 0.3 }, 7.9);
+      tl.fromTo("#tag", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7, ease: E }, 9.9);
 
-      // scene 2 (6-15)
-      show("#s2w", 6, 15);
+      // scene 2 (13-22)
+      show("#s2w", 13, 22);
       ["n1", "n2", "n3", "n4", "n5"].forEach((n, i) => {
-        const t = 7 + i * 0.85;
+        const t = 14 + i * 0.85;
         tl.fromTo("#" + n, { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: E }, t);
         if (i < 4) tl.fromTo("#l" + (i + 1), { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power2.inOut" }, t + 0.5);
       });
-      tl.fromTo("#pipe-src", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: E }, 10.9);
-      tl.fromTo("#pipe-note", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: E }, 11.4);
+      tl.fromTo("#pipe-note", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: E }, 18.4);
 
-      // scene 3 (15-22)
-      show("#s3w", 15, 22);
+      // scene 3 (22-29)
+      show("#s3w", 22, 29);
       ["ln1", "ln2", "ln3"].forEach((n, i) =>
-        tl.fromTo("#" + n, { x: -60, opacity: 0 }, { x: 0, opacity: 1, duration: 0.6, ease: E }, 15.7 + i * 1.2));
+        tl.fromTo("#" + n, { x: -60, opacity: 0 }, { x: 0, opacity: 1, duration: 0.6, ease: E }, 22.7 + i * 1.2));
 
-      // web demo (22-45.6)
-      show("#sww", 22, 45.6);
-      tl.fromTo("#web-vid", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: E }, 22.4);
-      tl.to("#web-vid", { opacity: 0, duration: 0.3, ease: "power2.in" }, 45.1);
+      // web demo (29-52.6)
+      show("#sww", 29, 52.6);
+      tl.fromTo("#web-vid", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: E }, 29.4);
+      tl.to("#web-vid", { opacity: 0, duration: 0.3, ease: "power2.in" }, 52.1);
       [[0, 3.2], [3.2, 9.2], [9.2, 13.2], [13.2, 16.4], [16.4, 23]].forEach(([a, b], i) => {
-        tl.fromTo("#wc" + i, { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.4, ease: E }, 22.4 + a);
-        if (i < 4) tl.to("#wc" + i, { opacity: 0, duration: 0.25 }, 22.4 + b - 0.25);
+        tl.fromTo("#wc" + i, { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.4, ease: E }, 29.4 + a);
+        if (i < 4) tl.to("#wc" + i, { opacity: 0, duration: 0.25 }, 29.4 + b - 0.25);
       });
 
-      // phone demo (45.6-63.1)
-      show("#sdw", 45.6, 63.1);
-      tl.fromTo("#demo-vid", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: E }, 45.9);
-      tl.to("#demo-vid", { opacity: 0, duration: 0.3, ease: "power2.in" }, 62.8);
-      tl.fromTo("#phone", { y: 60, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7, ease: E }, 45.8);
+      // phone demo (52.6-70.1)
+      show("#sdw", 52.6, 70.1);
+      tl.fromTo("#demo-vid", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: E }, 52.9);
+      tl.to("#demo-vid", { opacity: 0, duration: 0.3, ease: "power2.in" }, 69.8);
+      tl.fromTo("#phone", { y: 60, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7, ease: E }, 52.8);
       [[0, 3], [3, 9.5], [9.5, 14.9], [14.9, 17.3]].forEach(([a, b], i) => {
-        tl.fromTo("#cap" + i, { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.4, ease: E }, 45.9 + a);
-        if (i < 3) tl.to("#cap" + i, { opacity: 0, duration: 0.25 }, 45.9 + b - 0.25);
+        tl.fromTo("#cap" + i, { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.4, ease: E }, 52.9 + a);
+        if (i < 3) tl.to("#cap" + i, { opacity: 0, duration: 0.25 }, 52.9 + b - 0.25);
       });
 
-      // stats (63.1-70.6)
-      show("#s4w", 63.1, 70.6);
+      // stats (70.1-77.6)
+      show("#s4w", 70.1, 77.6);
       const count = (id, to, at, dec) => {
         const o = { v: 0 };
         tl.to(o, { v: to, duration: 1.8, ease: "power2.out", onUpdate: () => (document.getElementById(id).textContent = dec ? o.v.toFixed(1) : Math.round(o.v).toLocaleString("en-US")) }, at);
       };
-      tl.fromTo(".stat", { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: E, stagger: 0.2 }, 63.5);
-      count("c1", 15, 63.7); count("c2", 4.5, 63.9, true); count("c3", 2209, 64.1); count("c4", 45, 64.3);
-      tl.to("#stats", { scale: 1.03, duration: 3.8, ease: "none" }, 66.8);
-      tl.fromTo("#zero", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: E }, 66.4);
+      tl.fromTo("#s4w .stat", { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: E, stagger: 0.2 }, 70.5);
+      count("c1", 15, 70.7); count("c2", 4.5, 70.9, true); count("c3", 2209, 71.1); count("c4", 45, 71.3);
+      tl.to("#stats", { scale: 1.03, duration: 3.8, ease: "none" }, 73.8);
+      tl.fromTo("#zero", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: E }, 73.4);
 
-      // end card (70.6-75.6)
-      tl.fromTo("#s5w", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: E }, 70.6);
-      tl.fromTo("#brand", { y: 40, scale: 0.95, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.8, ease: "power4.out" }, 70.8);
-      tl.fromTo("#sub", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: E }, 71.8);
-      tl.fromTo("#url", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: E }, 72.6);
+      // eval 1: fidelity (77.6-85.6)
+      show("#e1w", 77.6, 85.6);
+      [95.5, 97.3, 97.4, 98.3, 98.5, 98.5].forEach((v, i) => {
+        gsap.set("#f" + (i + 1), { width: ((v - 90) / 10 * 100) + "%" });
+        tl.fromTo("#f" + (i + 1), { scaleX: 0 }, { scaleX: 1, duration: 0.7, ease: "power3.out" }, 78.3 + i * 0.15);
+      });
+      tl.fromTo("#b2", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: E }, 79.6);
+
+      // eval 2: speakers (85.6-93.1)
+      show("#e2w", 85.6, 93.1);
+      tl.fromTo("#b3", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: E }, 86.4);
+      ["k1", "k2", "k3"].forEach((n, i) =>
+        tl.fromTo("#" + n, { x: 60, opacity: 0 }, { x: 0, opacity: 1, duration: 0.5, ease: E }, 87.2 + i * 1.0));
+
+      // eval 3: speed and size (93.1-100.6)
+      show("#e3w", 93.1, 100.6);
+      tl.fromTo("#stats3 .stat", { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: E, stagger: 0.25 }, 93.6);
+      tl.fromTo("#foot3", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: E }, 95.6);
+
+      // eval 4: limits (100.6-109.1)
+      show("#e4w", 100.6, 109.1);
+      ["m1", "m2", "m3", "m4", "m5"].forEach((n, i) =>
+        tl.fromTo("#" + n, { x: -60, opacity: 0 }, { x: 0, opacity: 1, duration: 0.5, ease: E }, 101.2 + i * 0.8));
+      tl.fromTo("#foot4", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: E }, 105.6);
+
+      // end card (109.1-114.1)
+      tl.fromTo("#s5w", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: E }, 109.1);
+      tl.fromTo("#brand", { y: 40, scale: 0.95, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.8, ease: "power4.out" }, 109.3);
+      tl.fromTo("#sub", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: E }, 110.3);
+      tl.fromTo("#url", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: E }, 111.1);
 
       window.__timelines["main"] = tl;
       tl.seek(0);
