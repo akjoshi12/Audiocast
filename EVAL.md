@@ -300,3 +300,27 @@ By stage, system used peaked at 49.2 GB in annotate, 51.8 GB in voice design, 54
 - **Added to your library.** The two evaluation books from the fidelity run (`b71a690c`, `31f81c75`) are still in `data/`. These stress tests added nothing there.
 
 The stress and timing scripts were also kept in that temporary folder and are not in the repo.
+
+## Speaker attribution accuracy (P&P Ch. I)
+
+Gold labels were filled in by hand in `speakers_gold.csv` (33 `speech` lines of pipeline ch. 2, from the shipped `script.json`; consecutive same-speaker quotes are already merged into one line).
+
+| | |
+|---|---|
+| Lines scored | 33 |
+| Correct | 32 |
+| **Accuracy** | **97.0%** (32/33) |
+
+**Misattributions (1):**
+
+| id | text | LLM | gold |
+|---|---|---|---|
+| 50 | "I hope Mr. Bingley will like it" | Mrs. Bennet | Mr. Bennet |
+
+**Do errors cluster?** Not in this sample.
+- 21 of the 33 lines have no adjacent narration tag (unattributed back-and-forth, ids 19-23, 27-36, 40-44). All 21 of those turns were right, including the long Mr./Mrs. Bennet exchange.
+- The one error is line 50, a caption inside a Gutenberg `[Illustration: ...]` block. It is not conversation. It sits between markup lines, with no dialogue context to alternate from.
+- It is also a chapter-boundary leak. In the Gutenberg file the caption `[Illustration: "I hope Mr. Bingley will like it"]` is printed just before the `CHAPTER II.` heading, so the splitter put it at the end of Ch. I. The real line belongs to Ch. II ("I hope Mr. Bingley will like it, Lizzy."), where the pipeline labeled it Mr. Bennet correctly. The Ch. I model only saw the caption with no context, and guessed Mrs. Bennet.
+- So the failure here is source markup and chapter splitting, not turn-tracking. Excluding this caption, Ch. I is 32/32. This matches the earlier finding that illustration captions reach the script as speakable lines.
+
+**Caveats.** One chapter, one run, 33 lines: a single error moves accuracy by 3 points, so this says little about longer or multi-party scenes. Two-speaker alternation is the easiest case; Ch. VII (8 speakers, alias fragmentation) would be the real test for clustering. Gold was labeled by one person.
