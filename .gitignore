@@ -218,3 +218,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# audioproject local-only
+.venv/
+.venv-voxcpm/
+.pytest_cache/
+.superpowers/
+.DS_Store
+*.log
+data/
+samples/
+book/
+voices/Library/
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+__pycache__/
