@@ -9,7 +9,11 @@ Nothing leaves your computer except an optional Wikipedia lookup of title and au
 ## Demo
 
 
-https://github.com/user-attachments/assets/1fa63be3-6d51-4901-b659-371a7ff4d729
+
+
+https://github.com/user-attachments/assets/78ce2cba-734b-4d74-a5fb-087c3e2a4af5
+
+
 
 
 <!-- Drag the demo video here when editing this file on GitHub -->
