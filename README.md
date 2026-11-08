@@ -116,9 +116,33 @@ Open http://localhost:8000, upload a book, analyze chapters, tick the ones you w
 
 The live LLM test needs LM Studio running and is skipped otherwise.
 
+## Evaluation
+
+Measured on an Apple M4 Max (64 GB) with Qwen 27B in LM Studio. Full method, worst-line analysis and caveats are in [`EVAL.md`](EVAL.md); gold speaker labels are in [`speakers_gold.csv`](speakers_gold.csv).
+
+| What | Result |
+|---|---|
+| **Word fidelity** (each rendered line transcribed by Whisper `small.en` and compared to the script text) | **97.6%** mean match rate over 6 chapters (*Pride and Prejudice* Ch. I-III, *A Scandal in Bohemia* I-III); 596 lines, 71 min of audio. Strict scoring: 97.3% |
+| **Speaker attribution** (hand-labeled gold, P&P Ch. I) | **97.0%** (32/33 speech lines). 21 unattributed back-and-forth lines were all correct. The one error is an illustration caption that leaked in from Ch. II |
+| **Long lines** (900-3,600 characters through TTS) | No failures; 96.9-99.4% match |
+| **Speed** (one 1,081-word chapter, 413 s of audio) | Real-time factor 0.61 for TTS alone, **1.15 for the full pipeline** (about 8 min wall) |
+| **Peak memory** | About 54 GB system memory during TTS |
+
+Every TTS error in the 10 worst lines came from one cause: Gutenberg markup (`[Illustration: ...]`, copyright lines) in the TXT being read aloud as prose. Cleaning that markup would lift P&P Ch. I from 95.5% to 97.5%.
+
+Stress tests found real problems, none fixed yet:
+
+- **TXT chapter detection** recognises 6 of 14 heading styles. `Chapter One`, bare `I.`, `Part One`, `BOOK I` and `* * *` all collapse to one chapter.
+- **EPUB parsing** speaks footnote numbers and footnote bodies, and turns contents and notes pages into chapters.
+- **Hard-wrapped TXT** (no blank lines) becomes one LLM chunk; around 300k characters it fails with HTTP 400.
+- **Six-plus speakers** works, but one character can be cast under two names (`Lydia` / `Lydia Bennet`) and get two voices.
+
+Caveats: single runs, one gold-labeled chapter (33 lines), and nothing was judged by ear.
+
 ## Known limits
 
 - Audio quality and music fit are judged by ear; there is no automatic check beyond a Whisper round-trip on sample chapters.
+- Gutenberg `[Illustration]` and copyright markup, EPUB footnotes, and unusual chapter-heading styles are not cleaned (see Evaluation).
 - A 20 s music clip per mood is looped, so long scenes can audibly repeat.
 - Annotation is slow on large local models (roughly minutes per chapter).
 - `book/`, `data/` and `samples/` are git-ignored: bring your own books, and mind their copyright.
