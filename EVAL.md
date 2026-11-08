@@ -95,13 +95,13 @@ BUILD_LOG records about -18 dB for the earlier Holmes chapter. Both Holmes chapt
 - **Normalisation was extended after the first look.** The lenient rules were added after seeing that `Mister/Mr`, `chapter II/2` and hyphen compounds were inflating the error count; strict figures are shown so the choice is visible.
 - **Shared server.** The jobs ran on the app's normal queue where an Atomic Habits analysis was already running at the start (you cancelled it later; my jobs waited behind it). Nothing in `data/` for other books was modified; the two EPUB test uploads I created were removed.
 
-Scripts and raw results (`scored.json`, transcripts) are in the session scratchpad: `/private/tmp/claude-501/-Users-atrijoshi-Documents-audioproject/8540eebd-2d31-46cf-8744-1ab608ab76f7/scratchpad/`. The scratchpad is temporary.
+The scoring scripts and raw results were kept in a temporary session folder and are not part of the repo.
 
 ---
 
 # Stress tests and performance (2026-11-08)
 
-Nothing in the repo's code was changed. Stress tests called the same module functions the server calls and wrote only to the scratchpad. "Broke" below means behaved wrongly; only one case raised an error.
+Nothing in the repo's code was changed. Stress tests called the same module functions the server calls and wrote only to a temporary folder outside the repo. "Broke" below means behaved wrongly; only one case raised an error.
 
 ## Hardware and software
 
@@ -299,4 +299,4 @@ By stage, system used peaked at 49.2 GB in annotate, 51.8 GB in voice design, 54
 - **Nothing was judged by ear.**
 - **Added to your library.** The two evaluation books from the fidelity run (`b71a690c`, `31f81c75`) are still in `data/`. These stress tests added nothing there.
 
-Stress scripts and raw results: `/private/tmp/claude-501/-Users-atrijoshi-Documents-audioproject/8540eebd-2d31-46cf-8744-1ab608ab76f7/scratchpad/stress/`, plus `t1_timed.py`, `s1_session.py`, `s2_overflow.py`, `s3_long.py` and `s4_over.py` one level up. The scratchpad is temporary.
+The stress and timing scripts were also kept in that temporary folder and are not in the repo.
