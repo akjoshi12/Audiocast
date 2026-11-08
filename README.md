@@ -8,9 +8,15 @@ Nothing leaves your computer except an optional Wikipedia lookup of title and au
 
 ## Demo
 
+
+https://github.com/user-attachments/assets/1fa63be3-6d51-4901-b659-371a7ff4d729
+
+
 <!-- Drag the demo video here when editing this file on GitHub -->
 
 The promo film is built with [HyperFrames](https://hyperframes.heygen.com) from `video/` (`cd video && npm run render`).
+
+
 
 ## How it works
 
