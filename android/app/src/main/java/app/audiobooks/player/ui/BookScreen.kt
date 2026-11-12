@@ -24,6 +24,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +67,8 @@ fun BookScreen(book: Book, chapters: List<Chapter>, onBack: () -> Unit, onPlay: 
                     Text("${c.n}", Modifier.width(28.dp), color = Muted, fontSize = 12.sp)
                     Text(c.title, Modifier.weight(1f), fontSize = 13.sp, color = if (playable) androidx.compose.ui.graphics.Color.White else Muted, maxLines = 2)
                     Spacer(Modifier.width(8.dp))
+                    val dur by produceState<Long?>(null, c.localFile) { value = c.localFile?.let { f -> withContext(Dispatchers.IO) { fileDurationMs(f) } } }
+                    dur?.let { Text(fmtTime(it), Modifier.padding(end = 10.dp), color = Muted, fontSize = 11.sp) }
                     Text(status(c), color = Muted, fontSize = 11.sp)
                 }
             }
@@ -88,3 +93,10 @@ private fun status(c: Chapter) = when {
     !c.remoteReady -> "waiting for PC"
     else -> "downloading…"
 }
+
+/** Length of a downloaded chapter MP3, read from the file header (null if unreadable). ponytail: re-read per row on scroll; cache if it ever janks. */
+private fun fileDurationMs(path: String): Long? = runCatching {
+    android.media.MediaMetadataRetriever().run {
+        try { setDataSource(path); extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() } finally { release() }
+    }
+}.getOrNull()

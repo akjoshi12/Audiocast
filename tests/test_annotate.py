@@ -150,17 +150,6 @@ def test_fix_tags_forces_narrator_and_flows():
     assert us2[1]["speaker"] == "Bob"  # new paragraph: not a tag
 
 
-def test_mark_emphasis_keeps_only_real_words(monkeypatch):
-    import json as _j
-    from types import SimpleNamespace as NS
-    from app import annotate
-    reply = _j.dumps({"lines": [{"id": 0, "words": ["strength", "the", "ghost"]}, {"id": 1, "words": []}]})
-    monkeypatch.setattr(annotate.LLM.chat.completions, "create", lambda **k: NS(choices=[NS(message=NS(content=reply))]))
-    ls = [{"text": "A man of great strength."}, {"text": "Fine."}]
-    annotate.mark_emphasis(ls, "m")
-    assert ls[0]["emphasis"] == ["strength"] and "emphasis" not in ls[1]
-
-
 PASSAGE = ('“Looking for lodgings,” I answered.\n\n“That’s a strange thing,” remarked my companion; “you are the second man to-day.”\n\n'
            '“And who was the first?” I asked.\n\n“A fellow at the laboratory.”\n\n“By Jove!” I cried, “I am the very man for him.”\n\n'
            'Young Stamford looked strangely at me. “You don’t know Holmes yet,” he said.\n\n“I should like to meet him,” I said.\n\n'
@@ -212,3 +201,119 @@ def test_mark_sfx_keeps_only_clean_sounds(monkeypatch):
     assert ls[0]["sfx"] == [{"prompt": "fingers tapping on a wooden table", "at": "start"}]
     assert "sfx" not in ls[1]                     # empty sound
     assert ls[2]["sfx"][0]["at"] == "start"       # unknown placement falls back to the start of the line; id 9 is out of range and ignored
+
+
+def _u(text, kind="narration", emo="calm", pe=False, sp="Narrator"):
+    return {"text": text, "kind": kind, "speaker": sp, "emotion": emo, "para_end": pe, "hint": "", "pause_after": 0.3, "mood": "calm", "unsure": False}
+
+
+def test_fix_emotions_manner_moves_from_tag_to_quote():
+    from app.annotate import fix_emotions
+    e1 = [_u('"I am gonna burn this,"', "speech", sp="Bob"), _u("he said angrily.", emo="angry", pe=True)]
+    fix_emotions(e1)
+    assert (e1[0]["emotion"], e1[1]["emotion"]) == ("angrily", "calm")
+    e2 = [_u("He said angrily,", emo="furious"), _u('"I am gonna burn this."', "speech", sp="Bob", pe=True)]
+    fix_emotions(e2)
+    assert (e1[0]["emotion"], e2[0]["emotion"], e2[1]["emotion"]) == ("angrily", "calm", "angrily")
+    e3 = [_u('"Come."', "speech", sp="Bob"), _u("she whispered.", pe=True)]
+    fix_emotions(e3)
+    assert (e3[0]["emotion"], e3[1]["emotion"]) == ("whispering", "calm")
+    e4 = [_u('"Come."', "speech", emo="furious, voice shaking", sp="Bob"), _u("he said angrily.", emo="angry", pe=True)]
+    fix_emotions(e4)
+    assert (e4[0]["emotion"], e4[1]["emotion"]) == ("furious, voice shaking", "calm")
+
+
+def test_fix_emotions_pure_narration_keeps_emotion():
+    from app.annotate import fix_emotions
+    us = [_u("The wind howled.", emo="tense", pe=True), _u('"Hi."', "speech", sp="Bob", pe=True)]
+    fix_emotions(us)
+    assert us[0]["emotion"] == "tense"
+
+
+def test_fix_emotions_no_false_manner():
+    from app.annotate import fix_emotions
+    for tag in ("said Lily.", "he said finally.", "said Billy.", "said the elderly man.", "she said, faintly smiling."):
+        us = [_u('"Hi."', "speech", sp="Bob"), _u(tag, emo="sad", pe=True)]
+        fix_emotions(us)
+        assert (us[0]["emotion"], us[1]["emotion"]) == ("calm", "calm"), tag
+    us = [_u('"Hi."', "speech", sp="Bob"), _u("She walked slowly to the door.", emo="sad", pe=True)]   # no tag verb: untouched
+    fix_emotions(us)
+    assert (us[0]["emotion"], us[1]["emotion"]) == ("calm", "sad")
+    us = [_u("The room was a furnace of old grievances and dust that nobody had cleaned in years.", emo="tense"), _u('"Hi."', "speech", sp="Bob", pe=True)]
+    fix_emotions(us)
+    assert us[0]["emotion"] == "tense"   # long non-tag narration in a dialogue paragraph keeps its emotion
+
+
+def test_fix_emotions_cues():
+    from app.annotate import fix_emotions
+    for tag, want in (("he angrily said.", "angrily"), ("cried Elizabeth.", "exclaiming"), ("said Sherlock Holmes sharply.", "sharply"),
+                      ("cried his wife, impatiently.", "impatiently"), ("returned the King reproachfully.", "reproachfully")):
+        us = [_u('"Hi."', "speech", sp="Bob"), _u(tag, pe=True)]
+        fix_emotions(us)
+        assert us[0]["emotion"] == want, tag
+
+
+def test_fix_emotions_between_different_speakers():
+    from app.annotate import fix_emotions
+    us = [_u('"A,"', "speech", sp="Bob"), _u("he said angrily,"), _u('"B."', "speech", sp="Ann", pe=True)]
+    fix_emotions(us)
+    assert [u["emotion"] for u in us] == ["angrily", "calm", "calm"]
+
+
+def test_split_tag_then_fix_emotions_then_merge():
+    from app.annotate import _split_tags, fix_emotions
+    u = _u("Out, he said angrily.", "speech", sp="Bob", pe=True)
+    u["spoken_part"] = "Out,"
+    us = _split_tags([u])
+    fix_emotions(us)
+    assert [(x["kind"], x["text"], x["emotion"]) for x in us] == [("speech", "Out,", "angrily"), ("narration", "he said angrily.", "calm")]
+    assert len(merge(us)) == 2
+
+
+def test_fix_emotions_tag_between_two_quotes():
+    from app.annotate import fix_emotions
+    us = [_u('"A,"', "speech", sp="Bob"), _u("he said angrily,"), _u('"B."', "speech", sp="Bob", pe=True)]
+    fix_emotions(us)
+    assert [u["emotion"] for u in us] == ["angrily", "calm", "angrily"]
+
+
+def test_mark_sfx_skips_speech_and_consecutive_lines(monkeypatch):
+    import json as _j
+    from types import SimpleNamespace as NS
+    from app import annotate
+    monkeypatch.setattr(annotate, "_preset", lambda: {})
+    reply = _j.dumps({"lines": [{"id": i, "sound": "a loud bell ringing", "at": "start"} for i in range(3)]})
+    monkeypatch.setattr(annotate.LLM.chat.completions, "create", lambda **k: NS(choices=[NS(message=NS(content=reply))]))
+    ls = [{"text": "Hear the bell?", "kind": "speech"}, {"text": "A bell rang.", "kind": "narration"}, {"text": "Another bell rang.", "kind": "narration"}]
+    annotate.mark_sfx(ls, "m")
+    assert ["sfx" in l for l in ls] == [False, True, False]
+
+
+def _fake_run(monkeypatch, progress):
+    from app import annotate
+    from app.annotate import LABEL_W, SFX_W
+    text = "\n\n".join(f"Paragraph {i}. " + "The rain fell on the quiet street. " * 8 for i in range(60))
+    lab = lambda us, *a, **k: [{"id": u["id"], "kind": "narration", "speaker": "Narrator", "emotion": "calm", "pause_after": 0.4,
+                                "mood": "calm", "unsure": False, "spoken_part": ""} for u in us]
+    monkeypatch.setattr(annotate, "label_chunk", lab)
+    monkeypatch.setattr(annotate, "describe", lambda *a, **k: [])
+    monkeypatch.setattr(annotate, "fill_moods", lambda *a, **k: None)
+    monkeypatch.setattr(annotate, "_preset", lambda: {})
+    monkeypatch.setattr(annotate, "_chat", lambda **k: (_ for _ in ()).throw(RuntimeError("no network")))
+    return annotate.annotate_chapter(text, progress=progress), len(annotate.chunk(annotate.units(text))), LABEL_W, SFX_W
+
+
+def test_progress_is_monotonic_and_ends_at_total(monkeypatch):
+    calls = []
+    r, nchunks, LW, SW = _fake_run(monkeypatch, lambda d, t, msg="": calls.append((d, t, msg)))
+    assert nchunks >= 3 and len(r["lines"]) > 20
+    ds = [d for d, _, _ in calls]
+    assert ds == sorted(ds) and all(d <= t for d, t, _ in calls)
+    assert calls[-1][0] == calls[-1][1]
+    assert len({t for _, t, _ in calls}) <= 2      # estimate, then one correction at merge
+    assert calls[-1][1] == LW * nchunks + SW * -(-len(r["lines"]) // 20)
+
+
+def test_progress_optional_and_no_emphasis(monkeypatch):
+    r, *_ = _fake_run(monkeypatch, None)
+    assert all("emphasis" not in l for l in r["lines"])

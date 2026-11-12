@@ -53,14 +53,14 @@ upload -> extract chapters -> script annotation (local LLM) -> review/casting UI
 | Book parsing | `ebooklib` + `beautifulsoup4` (EPUB), `pypdf` (PDF), plain TXT | Light, standard |
 | Script annotation | Local LLM via Ollama (e.g. Qwen2.5 7B/Llama 3.1 8B), JSON output per chapter chunk | Speaker + emotion + scene mood need language understanding; regex can't do it |
 | TTS (default) | **Kokoro-82M**: fast, Apache-2.0, ~50 distinct voices, good on CPU/MPS | Many voice options, practical speed |
-| TTS (expressive, optional) | **Chatterbox** (MIT): emotion-intensity control, voice cloning from a short sample | Real emotion; slower |
+| TTS (expressive, optional) | **VoxCPM2**: voice cloning from a short sample, written delivery direction | Real emotion; slower |
 | Engine interface | Small `synthesize(text, voice, emotion) -> wav` function per engine | Lets the user pick per character |
 | Music | Local **MusicGen-small** generates mood beds (tense, calm, sad, epic...), cached; user can also drop their own loops into `music/<mood>/` which take priority | Local, no licensing issues for own files |
 | Assembly | `pydub` + `ffmpeg` | Pauses, crossfades, ducking |
 | State | One folder per book + SQLite (`lines`, `characters`, `jobs`) | Resumable, inspectable |
 | Jobs | Background thread + progress polling | One user, no queue infra needed |
 
-Emotion handling: Kokoro has no emotion knob, so emotion maps to speed, pause length and voice style where possible. True emotional range comes from Chatterbox. Honest limitation: Kokoro-only output will be well-paced but emotionally mild.
+Emotion handling: Kokoro has no emotion knob, so emotion maps to speed, pause length and voice style where possible. True emotional range comes from VoxCPM2 (cloned voices) and Qwen3-TTS. Honest limitation: Kokoro-only output will be well-paced but emotionally mild.
 
 ## 7. User flow
 
@@ -86,7 +86,7 @@ Emotion handling: Kokoro has no emotion knob, so emotion maps to speed, pause le
 ## 10. Risks
 
 - Speaker attribution quality depends on the local LLM; long-range pronoun cases ("he said") will miss sometimes. Review UI is the mitigation.
-- Render time: roughly real-time-or-slower on a laptop for Chatterbox; Kokoro much faster.
+- Render time: roughly real-time-or-slower on a laptop for VoxCPM2; Kokoro much faster.
 - Model download sizes (several GB total) on first setup.
 - Dependency friction (PyTorch, espeak-ng, ffmpeg) on macOS; setup script will check and report.
 
@@ -96,7 +96,7 @@ Exact LLM prompt/chunking, UI styling, DB schema details, voice auto-suggestion 
 
 ## 12. Build process
 
-Work is logged in `BUILD_LOG.md` (project root), one dated entry per step: what was done, decisions, commands run, results, failures. Built in thin vertical slices: (1) upload + chapter extraction, (2) Kokoro single-voice render, (3) LLM speaker annotation, (4) casting UI + multi-voice, (5) pauses/emotion, (6) music, (7) Chatterbox + export polish. A short check runs at each slice.
+Work is logged in `BUILD_LOG.md` (project root), one dated entry per step: what was done, decisions, commands run, results, failures. Built in thin vertical slices: (1) upload + chapter extraction, (2) Kokoro single-voice render, (3) LLM speaker annotation, (4) casting UI + multi-voice, (5) pauses/emotion, (6) music, (7) VoxCPM2 clones + export polish. A short check runs at each slice.
 
 ## 13. Decided by you
 
@@ -106,7 +106,7 @@ Work is logged in `BUILD_LOG.md` (project root), one dated entry per step: what 
 ## 14. Consequences of 64 GB RAM **[my call]**
 
 - Can run a larger local LLM for better speaker attribution: ~14B-32B class (e.g. Qwen2.5 32B at 4-bit, about 20 GB) instead of 7B.
-- Kokoro and Chatterbox can both stay loaded alongside the LLM; no model swapping.
+- Kokoro and VoxCPM2 can both stay loaded alongside the LLM; no model swapping.
 - Model weights total roughly 30 GB on disk; setup script checks free disk space.
 
 ## 15. Revisions after approval (2026-11-05)
@@ -116,10 +116,10 @@ Spec approved by the user with these changes:
 - **LLM runtime is LM Studio, not Ollama.** It is already installed and running at `http://localhost:1234/v1` (OpenAI-compatible) with `qwen/qwen3.8-27b` loaded. The app uses that; no new LLM download.
 - **Full emotion from day one.** Kokoro-first is dropped. Expressive engines are primary; Kokoro stays only as a fast "draft preview" option. Slower render is accepted.
 - **Music must be correct, not just present.** Quality over speed: the LLM tags each scene with mood, intensity and start/end; MusicGen generates per scene (medium model, not small, if it fits); a verification pass checks the cue list against the script before rendering; the user can audition and swap any cue.
-- **Reuse before download.** Already present: ffmpeg, uv, LM Studio, Python 3.12/3.13, and the model weights in the HF cache (Qwen3-TTS VoiceDesign and CustomVoice, Chatterbox-turbo, Kokoro, MusicGen-small, Whisper). Installed in this project: mlx-audio, espeak-ng. Still not installed: torch and audiocraft (MusicGen via PyTorch; to be handled at the music slice, with an mlx route tried first).
+- **Reuse before download.** Already present: ffmpeg, uv, LM Studio, Python 3.12/3.13, and the model weights in the HF cache (Qwen3-TTS VoiceDesign and CustomVoice, Kokoro, MusicGen-small, Whisper). Installed in this project: mlx-audio, espeak-ng. Still not installed: torch and audiocraft (MusicGen via PyTorch; to be handled at the music slice, with an mlx route tried first).
 
 TTS engines (revised) **[my call]**:
 - **Qwen3-TTS (VoiceDesign + CustomVoice)**: instruction-driven voice and emotion ("angry, clipped, low voice"); lets each character's voice be designed from a text description, and gives the auto-assigned voices.
-- **Chatterbox-turbo (MLX)**: emotion-exaggeration control and voice cloning.
+- **VoxCPM2**: voice cloning with a written delivery direction (runs in its own virtualenv).
 - **Kokoro (MLX)**: fast draft only.
 - Runtime: `mlx-audio` on Apple Silicon (native, fast). Verified at slice 2; if an engine fails, fall back to the PyTorch version and log it.

@@ -18,27 +18,17 @@ VOICES = {
     "female": ["serena", "vivian", "ono_anna", "sohee"],
     "male": ["ryan", "aiden", "eric", "dylan", "uncle_fu"],
 }
-NARRATOR_VOICE = "narrator_ref"   # Chatterbox clone of voices/narrator_ref.wav ("a_warm_elder", chosen by the user)
+NARRATOR_VOICE = "narrator_ref"   # VoxCPM2 clone of voices/narrator_ref.wav ("a_warm_elder", chosen by the user)
 NARRATOR_REF = Path(__file__).resolve().parent.parent / "voices" / "narrator_ref.wav"
 NARRATOR_REF_TEXT = ("I’m pretty much screwed. That’s my considered opinion. Screwed. Six days in to what should be a greatest two months of my life, "
                      "and it’s turned in to a nightmare. I don’t even know who’ll read this. I guess someone will find it eventually.")
-HIGH = ("scream", "shout", "furious", "angry", "desperate", "panic", "terrif", "loud", "yell", "rage", "frantic", "anguish")
-MID = ("tense", "urgent", "anxious", "bitter", "excited", "sarcas", "amused", "dry", "sad", "sorrow", "grief", "fear", "wry", "worr", "ominous")
-LOW = ("calm", "quiet", "soft", "gentle", "hush", "whisper", "neutral", "announc", "weary")
 
 ROOT = Path(__file__).resolve().parent.parent
 DESIGN_TEXT = ("I never thought I would see you again, not after everything that happened. "
                "But here we are, and there is a great deal to say before the night is over.")
-VARIETY = ["", "higher-pitched and bright", "low and gravelly", "soft and slow", "crisp and brisk", "warm and breathy"]
+VARIETY = ["", "higher-pitched and bright", "low and gravelly", "soft and slow", "crisp and clear", "warm and breathy"]
 _model = None
 _dm = None
-_cb = None
-CLONE_MODEL = "mlx-community/chatterbox-fp16"   # full Chatterbox (2.6 GB): emotion dial works, unlike chatterbox-turbo
-
-
-def exaggeration(emotion: str) -> float:
-    e = emotion.lower()
-    return 0.6 if any(w in e for w in HIGH) else 0.45 if any(w in e for w in MID) else 0.3  # higher also speeds speech up; user liked 0.3 + cfg 0.1
 
 
 def _cut(s: str, maxc: int) -> list[str]:
@@ -74,7 +64,7 @@ def model():
 
 PITCH = ["deep", "low", "mid-range", "high"]
 TIMBRE = ["gravelly", "smooth", "nasal", "breathy", "resonant", "thin", "warm", "reedy", "husky"]
-PACE = ["slow", "measured", "brisk"]
+PACE = ["slow", "measured"]
 
 
 def contrast(avoid: dict | None = None) -> dict:
@@ -131,10 +121,18 @@ def auto_cast(characters: list[dict]) -> dict[str, str]:
     return cast
 
 
-ENGINE = "voxcpm"   # clone engine: "voxcpm" (VoxCPM2, takes a written delivery direction) or "chatterbox" (one exaggeration number, ~190 wpm)
 VOX_PY = ROOT / ".venv-voxcpm" / "bin" / "python"
 NARRATOR_DIRECTION = "an unhurried, warm audiobook narrator"
 _vox = None
+
+
+def stop_vox() -> None:
+    """Quit the VoxCPM2 worker so its memory is free (called before scripts start); it restarts on the next render."""
+    global _vox
+    if _vox is not None and _vox.poll() is None:
+        _vox.terminate()
+        _vox.wait(timeout=30)
+    _vox = None
 
 
 def _vox_ask(job: dict) -> dict:
@@ -178,17 +176,9 @@ def _speak_vox(text: str, voice: str, emotion: str, depth: int = 0, retried: boo
 
 
 def _speak_piece(text: str, voice: str, emotion: str) -> np.ndarray:
-    global _cb
-    if (voice == NARRATOR_VOICE or voice.startswith("clone:")) and ENGINE == "voxcpm":
-        return _speak_vox(text, voice, emotion)
     if voice == NARRATOR_VOICE or voice.startswith("clone:"):
-        if _cb is None:
-            from mlx_audio.tts.utils import load_model
-            _cb = load_model(model_path=CLONE_MODEL)
-        ref = NARRATOR_REF if voice == NARRATOR_VOICE else ROOT / voice[6:]
-        rs = _cb.generate(text=text, ref_audio=str(ref), exaggeration=exaggeration(emotion), cfg_weight=0.1, verbose=False)  # low cfg = slower, less rushed
-    else:
-        rs = model().generate(text=text, voice=voice, instruct=emotion, lang_code="en", verbose=False)
+        return _speak_vox(text, voice, emotion)
+    rs = model().generate(text=text, voice=voice, instruct=emotion, lang_code="en", verbose=False)
     parts = [np.array(r.audio) for r in rs]
     return np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
 
@@ -223,7 +213,7 @@ def tighten(a: np.ndarray, max_gap: float = 0.7, edge: float = 0.1) -> np.ndarra
     return np.concatenate([a[k * w:(k + 1) * w] for k in np.flatnonzero(keep)] + [a[n * w:]])
 
 
-TEMPO = 0.92   # the clone model reads ~190 wpm; this brings it to ~175 (user picked between 0.84 and none)
+TEMPO = 0.92   # slow() default; also kept in line_file's hashed string only so existing cache names stay valid
 GAPS = {".": 0.55, "!": 0.5, "?": 0.5, "…": 0.7}   # pause after a sentence piece, by its last mark; other = 0.3
 
 
@@ -234,21 +224,25 @@ def slow(a: np.ndarray, tempo: float = TEMPO) -> np.ndarray:
     return np.frombuffer(r.stdout, dtype="<f4").copy()
 
 
-def stress(text: str, words: list[str]) -> str:
-    """Capitalise the first whole-word match of each emphasis word: Chatterbox leans on a CAPS word (it has no stress control)."""
-    for w in words:
-        text = re.sub(rf"\b{re.escape(w)}\b", w.upper(), text, count=1, flags=re.I) if len(w) >= 4 else text
-    return text
+CHAR_MAX_WPM, MIN_TEMPO = 165, 0.8   # calibration knobs, tune by ear: character voices are slowed to at most this pace (narrator measures ~155-165 wpm on existing renders, never capped)
 
 
-def speak(text: str, voice: str, emotion: str, emphasis: list[str] = ()) -> np.ndarray:
-    clone = (voice == NARRATOR_VOICE or voice.startswith("clone:")) and ENGINE == "chatterbox"   # slow-down + CAPS emphasis are Chatterbox workarounds
-    if clone:
-        text = stress(text, emphasis)
+def pace(a: np.ndarray, text: str, max_wpm: float = CHAR_MAX_WPM) -> np.ndarray:
+    """Slow a piece that is read faster than max_wpm (never below MIN_TEMPO). Short pieces give a noisy rate, so they pass."""
+    words = len(text.split())
+    if words < 4 or not len(a):
+        return a
+    # ponytail: words-per-minute is a rough proxy; count syllables if long-word lines still rush
+    rate = words / (len(a) / SR / 60)
+    return a if rate <= max_wpm else slow(a, max(max_wpm / rate, MIN_TEMPO))
+
+
+def speak(text: str, voice: str, emotion: str) -> np.ndarray:
     out = []
     for t in split_text(text):
         a = tighten(_speak_piece(t, voice, emotion))
-        out += [slow(a) if clone and len(a) else a, np.zeros(int(SR * GAPS.get(t.rstrip("\"”’')")[-1:], 0.3)), dtype=np.float32)]
+        a = a if voice == NARRATOR_VOICE else pace(a, t)
+        out += [a, np.zeros(int(SR * GAPS.get(t.rstrip("\"”’')")[-1:], 0.3)), dtype=np.float32)]
     return np.concatenate(out[:-1]) if out else np.zeros(0, dtype=np.float32)
 
 
@@ -258,8 +252,9 @@ def _voice_for(l: dict, cast: dict[str, str]) -> str:
 
 def line_file(cache: Path, i: int, l: dict, voice: str) -> Path:
     """Cache name includes a hash of what is spoken, so editing a line re-renders only that line."""
-    engine = (CLONE_MODEL if ENGINE == "chatterbox" else ENGINE) if voice == NARRATOR_VOICE or voice.startswith("clone:") else ""  # a new engine must not reuse old audio
-    h = hashlib.md5(f"{voice}|{engine}|{TIGHTEN}|{TEMPO}|{l['emotion']}|{l['text']}|{l.get('emphasis', '')}".encode()).hexdigest()[:10]
+    # the hashed string is frozen so re-rendering hours of narrator audio is not needed: engine literal, TEMPO and the (now unused) 'emphasis' key stay in it
+    engine = "voxcpm" if voice == NARRATOR_VOICE or voice.startswith("clone:") else ""
+    h = hashlib.md5((f"{voice}|{engine}|{TIGHTEN}|{TEMPO}|{l['emotion']}|{l['text']}|{l.get('emphasis', '')}" + ('' if voice == NARRATOR_VOICE else f"|wpm{CHAR_MAX_WPM}")).encode()).hexdigest()[:10]
     return cache / f"{i:05d}_{h}.wav"
 
 
@@ -282,7 +277,7 @@ def render(lines: list[dict], cast: dict[str, str], folder: Path, progress=None)
         voice = _voice_for(l, cast)
         f = line_file(cache, i, l, voice)
         if not f.exists():
-            sf.write(f, speak(l["text"], voice, l["emotion"], l.get("emphasis", [])), SR)
+            sf.write(f, speak(l["text"], voice, l["emotion"]), SR)
         pieces += [sf.read(f, dtype="float32")[0],
                    np.zeros(int(SR * max(l["pause_after"], 0.1)), dtype=np.float32)]
         if progress:

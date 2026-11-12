@@ -27,8 +27,7 @@ def test_render_and_resume(tmp_path):
     assert next((tmp_path / "lines").glob("00000_*.wav")).stat().st_mtime_ns == first
 
 
-def test_exaggeration_and_split():
-    assert tts.exaggeration("furious, shouting") > tts.exaggeration("tense") > tts.exaggeration("calm, quiet")
+def test_split():
     long = " ".join(f"Sentence number {i} is here." for i in range(40))
     parts = tts.split_text(long)
     assert all(len(p) <= 260 for p in parts) and " ".join(parts) == long
@@ -56,10 +55,9 @@ def test_tighten_cuts_long_inner_silence_but_keeps_short_pauses_and_speech():
     assert abs(float(np.abs(out).sum()) - float(np.abs(clip).sum())) < 1e-3 * float(np.abs(clip).sum())  # no speech lost
 
 
-def test_stress_and_slow():
+def test_slow():
     import numpy as np
     from app import tts
-    assert tts.stress("He felt a great strength, truly.", ["strength", "he", "nope"]) == "He felt a great STRENGTH, truly."  # short/absent words ignored
     a = (np.sin(np.linspace(0, 2000, tts.SR)) * 0.3).astype("float32")  # 1 s tone
     assert 1.05 < len(tts.slow(a)) / tts.SR < 1.15  # 1/0.92 = 1.087
 
@@ -124,3 +122,51 @@ def test_speak_vox_retries_a_short_piece_once_before_giving_up(monkeypatch):
     monkeypatch.setattr(tts, "_vox_ask", flaky)
     a = tts._speak_vox("Short line.", tts.NARRATOR_VOICE, "calm")
     assert n["calls"] == 2 and len(a) == 2400
+
+
+def _noise(sec):
+    import numpy as np
+    return (np.random.default_rng(0).uniform(-0.3, 0.3, int(sec * tts.SR))).astype("float32")
+
+
+def _sec(a):
+    return len(a) / tts.SR
+
+
+def test_pace_slows_fast_clip_to_cap():
+    a = tts.pace(_noise(2.0), "one two three four five six seven")          # 210 wpm
+    assert _sec(a) == pytest.approx(2.0 * 210 / 165, rel=0.05)
+
+
+def test_pace_clamps_at_min_tempo():
+    a = tts.pace(_noise(2.0), "one two three four five six seven eight nine ten")  # 300 wpm
+    assert _sec(a) == pytest.approx(2.0 / 0.8, rel=0.05)
+
+
+def test_pace_leaves_ok_and_short_and_empty_alone(monkeypatch):
+    a = _noise(4.0)
+    assert tts.pace(a, "one two three four five six seven eight nine ten eleven") is a   # 165 wpm
+    b = _noise(0.3)
+    assert tts.pace(b, "one two three") is b                                # too short to measure
+    monkeypatch.setattr(tts, "slow", lambda *x, **k: pytest.fail("ffmpeg called"))
+    e = _noise(0)
+    assert tts.pace(e, "one two three four five six seven") is e
+
+
+def test_speak_never_caps_narrator(monkeypatch):
+    text = "one two three four five six seven eight nine ten."
+    monkeypatch.setattr(tts, "_speak_piece", lambda t, v, e: _noise(2.0))
+    assert _sec(tts.speak(text, tts.NARRATOR_VOICE, "calm")) == pytest.approx(2.0, rel=0.05)
+    assert _sec(tts.speak(text, "clone:voices/x.wav", "calm")) == pytest.approx(2.5, rel=0.05)
+
+
+def test_line_file_narrator_name_stable_character_changes():
+    from pathlib import Path
+    l = {"text": "Hello there.", "emotion": "calm"}
+    assert tts.line_file(Path("c"), 3, l, tts.NARRATOR_VOICE).name == "00003_287ebc0a63.wav"
+    assert tts.line_file(Path("c"), 3, l, "clone:voices/x.wav").name != "00003_99f5e050ae.wav"
+
+
+def test_no_brisk_voice_designs():
+    assert not any("brisk" in x for x in tts.PACE + tts.VARIETY)
+    assert tts.contrast({"pace": "slow"})["pace"] == "measured"

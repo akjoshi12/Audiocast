@@ -12,6 +12,7 @@ MODEL_ID = "facebook/musicgen-small"
 CLIP_TOKENS = 1024        # ~20 s per generated clip (50 tokens/s)
 BASE_DB, DUCK_DB = -7.0, -5.0  # music vs speech: -7 dB in gaps, -12 dB under speech (was -13/-19 and still not heard on a phone)
 FADE_S, MIN_CUE_S = 2.0, 25.0
+QUIET, MAX_CUE_S = ("calm", "none", ""), 75.0   # calm stretches get no music; a cue fades out after MAX_CUE_S (tune by ear)
 
 _mg = None
 
@@ -61,19 +62,9 @@ def loop(clip: np.ndarray, n: int, xf: int = int(3 * SR)) -> np.ndarray:
 
 
 def cues(lines: list[dict], spans: list[tuple[float, float]]) -> list[dict]:
-    """Group consecutive same-mood lines into cues; absorb cues shorter than MIN_CUE_S into the previous one."""
-    moods = [l["mood"].strip().lower() for l in lines]
-    # The labeller often answers "none" for a whole chapter, which would mean no music at all despite the Background music box.
-    # On story lines "none" carries the last real mood (the first real one before it, "calm" if there is none); headings stay silent.
-    real = [m for m in moods if m not in ("none", "")]
-    cur = real[0] if real else "calm"
-    for i, l in enumerate(lines):
-        if l.get("kind") == "heading":
-            moods[i] = "none"
-        elif moods[i] in ("none", ""):
-            moods[i] = cur
-        else:
-            cur = moods[i]
+    """Music only where the scene calls for it: calm/unlabelled lines and headings are silent ("none"), music enters at a mood change.
+    Same-mood lines group into a cue, cues shorter than MIN_CUE_S are absorbed into the previous one, audible cues are capped at MAX_CUE_S."""
+    moods = ["none" if l.get("kind") == "heading" or l["mood"].strip().lower() in QUIET else l["mood"].strip().lower() for l in lines]
     out = []
     for mood, (a, b) in zip(moods, spans):
         if out and out[-1]["mood"] == mood:
@@ -86,6 +77,9 @@ def cues(lines: list[dict], spans: list[tuple[float, float]]) -> list[dict]:
             merged[-1]["end"] = c["end"]
         else:
             merged.append(c)
+    for c in merged:
+        if c["mood"] != "none":
+            c["end"] = min(c["end"], c["start"] + MAX_CUE_S)
     return merged
 
 

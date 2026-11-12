@@ -20,6 +20,7 @@ from app.books import extract_chapters, guess_details
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 MUSIC_CACHE = DATA / "music_cache"
+MUSIC_ON = True   # music is back but sparing: only non-calm scenes, capped per cue (music.MAX_CUE_S); False hides it again (and re-hide #musicRow in index.html)
 app = FastAPI(title="Full-Cast Audiobook")
 
 
@@ -65,6 +66,11 @@ def _run(key: str, fn):
     try:
         with LOCK:
             JOBS[key].update(state="running", msg="working")
+
+            if _kind(key) == "analyze":   # one family of models in memory at a time
+                tts.stop_vox()
+            elif _kind(key) == "render":
+                annotate.unload_all()
 
             def tick(d, t, msg=""):
                 JOBS[key].update(done=d, total=t, msg=msg)
@@ -308,6 +314,31 @@ def _design(book_id: str, c: dict, k: int, hint: dict | None = None) -> dict:
             "age": c.get("age", "unknown"), "guessed": c.get("gender") not in ("male", "female") or not c.get("voice"), "pitch": tts.ref_pitch(wav)}
 
 
+def _plan_voice(book_id: str, c: dict, k: int) -> dict:
+    """Reserve a slot for a character's voice during script analysis WITHOUT running the GPU voice-design model.
+    The actual WAV is generated lazily by _ensure_designed() just before the first render or redesign."""
+    prompt = tts.voice_prompt(c, k)
+    wav = DATA / book_id / "voices" / f"{uuid.uuid4().hex[:8]}.wav"   # path chosen now, file written later
+    return {"voice": "clone:" + str(wav.relative_to(tts.ROOT)), "desc": prompt, "traits": c.get("voice", ""), "gender": c.get("gender", "unknown"),
+            "age": c.get("age", "unknown"), "guessed": c.get("gender") not in ("male", "female") or not c.get("voice"), "pitch": 0, "pending": True}
+
+
+def _ensure_designed(book_id: str, progress=None) -> None:
+    """Generate WAV files for any characters whose voice is still pending (planned but not yet designed).
+    Called at the start of a render job so GPU work happens only when the user triggers audio generation."""
+    bc = _book_cast(book_id)
+    pending = [(name, entry) for name, entry in bc.items() if entry.get("pending") and entry.get("voice", "").startswith("clone:")]
+    if not pending:
+        return
+    for idx, (name, entry) in enumerate(pending):
+        if progress:
+            progress(0, 1, f"Designing voice {idx + 1} of {len(pending)}: {name}")
+        wav = tts.ROOT / entry["voice"][6:]
+        tts.design_voice(entry["desc"], wav)
+        entry.update(pitch=tts.ref_pitch(wav), pending=False)
+    _cast_file(book_id).write_text(json.dumps(bc, indent=1))
+
+
 @app.post("/api/books/{book_id}/chapters/{n}/analyze")
 def analyze(book_id: str, n: int):
     ch = _chapters(book_id)[n - 1]
@@ -323,17 +354,18 @@ def analyze(book_id: str, n: int):
         s = annotate.annotate_chapter(ch["text"], progress=annotate_tick, about=_about(book_id))
         out.mkdir(parents=True, exist_ok=True)
         s = _apply_aliases(book_id, s)
-        cast = _book_cast(book_id)  # one voice per character for the whole book: only characters not seen before get designed
+        cast = _book_cast(book_id)  # one voice per character for the whole book: only characters not seen before get planned
         new = [c for c in s["characters"] if c["name"] not in cast]
         for i, c in enumerate(new):
-            progress(last[0], last[1], f"Designing voice {i + 1} of {len(new)}: {c['name']}")
+            # ponytail: voice WAVs are NOT generated here — that happens lazily in _ensure_designed() at render time,
+            # so script creation never touches the GPU voice-design model and stays fast.
             k = sum(1 for v in cast.values() if (v["gender"], v["age"]) == (c.get("gender"), c.get("age")))
-            cast[c["name"]] = _design(book_id, c, k)
+            cast[c["name"]] = _plan_voice(book_id, c, k)
         _cast_file(book_id).write_text(json.dumps(cast, indent=1))
         lines = annotate.frame(ch["title"], s["lines"], ch.get("part", ""))
         (out / "script.json").write_text(json.dumps({
             "title": ch["title"], "characters": s["characters"], "cast": {"Narrator": tts.NARRATOR_VOICE, **{c["name"]: cast[c["name"]]["voice"] for c in s["characters"]}},
-            "lines": lines, "music": True, "setting": ""}, indent=1))
+            "lines": lines, "music": MUSIC_ON, "setting": ""}, indent=1))
     return _job(f"{book_id}:{n}:analyze", work)
 
 
@@ -457,6 +489,23 @@ class Preview(BaseModel):
 @app.post("/api/preview")
 def preview(p: Preview):
     with LOCK:
+        # If the requested voice is a clone that hasn't been generated yet (pending from analyze),
+        # generate it now on-demand. The GPU lock is already held, so this is safe.
+        if p.voice.startswith("clone:"):
+            wav_path = tts.ROOT / p.voice[6:]
+            if not wav_path.exists():
+                # Find this voice's design prompt across all books and generate the WAV.
+                for bc_path in DATA.glob("*/cast.json"):
+                    bc = json.loads(bc_path.read_text())
+                    for name, entry in bc.items():
+                        if entry.get("voice") == p.voice and entry.get("pending"):
+                            tts.design_voice(entry["desc"], wav_path)
+                            entry.update(pitch=tts.ref_pitch(wav_path), pending=False)
+                            bc_path.write_text(json.dumps(bc, indent=1))
+                            break
+                    else:
+                        continue
+                    break
         audio = tts.speak(p.text, p.voice, p.emotion)
     buf = io.BytesIO()
     sf.write(buf, audio, tts.SR, format="WAV")
@@ -470,16 +519,18 @@ def render(book_id: str, n: int):
         raise HTTPException(404, "not analyzed yet")
 
     def work(progress):
+        # Generate any voice WAVs that were only planned (not yet designed) during script analysis.
+        _ensure_designed(book_id, progress)
         script = json.loads((out / "script.json").read_text())
         wav = tts.render(script["lines"], script["cast"], out, progress=progress)
         audio = sf.read(wav, dtype="float32")[0]
         sp = tts.spans(script["lines"], script["cast"], out)
-        if script.get("music"):
+        if script.get("sfx", True):   # sound effects named in the text (a knock, a bark); lines carry them from the analysis. First: they open gaps and shift the timeline
+            audio, sp = sfx.add(audio, script["lines"], sp, DATA / "sfx_cache")
+        if MUSIC_ON and script.get("music"):
             cues = music.cues(script["lines"], sp)
             (out / "cues.json").write_text(json.dumps(cues))
             audio = music.mix(audio, sp, cues, MUSIC_CACHE, script.get("setting", ""))
-        if script.get("sfx", True):   # sound effects named in the text (a knock, a bark); lines carry them from the analysis
-            audio = sfx.add(audio, script["lines"], sp, DATA / "sfx_cache")
         sf.write(out / "final.wav", audio, tts.SR)
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(out / "final.wav"), "-codec:a", "libmp3lame",
                         "-q:a", "2", str(out / "chapter.mp3")], check=True)

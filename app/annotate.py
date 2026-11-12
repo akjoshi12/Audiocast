@@ -13,7 +13,22 @@ from openai import OpenAI
 LLM = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio", timeout=900)
 MODEL = "qwen/qwen3.8-27b"
 CHUNK_CHARS = 3000
-LOAD = {"context": 64000, "parallel": 4, "ttl": 900}   # parallel 1 gave worse labels (live_messy failed 6/6, passes mostly at 4); idle 15 min -> unloaded, freeing RAM for the voice models
+LOAD = {"context": 64000, "parallel": 1, "ttl": 900}   # parallel 1 + 64k ctx + thinking off is what every shipped book was made with; 4 is far slower on this Mac
+PRESET = __import__("pathlib").Path.home() / ".cache/lm-studio/config-presets/Resume Factory.preset.json"
+
+
+def _preset() -> dict:
+    """Request params from LM Studio's Resume Factory preset, read fresh every call; a missing preset is an error, never a silent fallback.
+    Applied field by field: sending `preset` in the request makes LM Studio JIT-reload Qwen at parallel 4, undoing LOAD."""
+    f = {x["key"]: x["value"] for x in json.loads(PRESET.read_text())["operation"]["fields"]}
+    q = "ext.virtualModel.customField.qwen.qwen3.827b."
+    effort = f.get(q + "reasoningEffort", "medium") if f.get(q + "enableThinking", False) else "none"   # "none" is how LM Studio's API turns Qwen thinking off
+    return {"temperature": f["llm.prediction.temperature"], "extra_body": {"reasoning_effort": effort}}
+
+
+def _chat(**kw):
+    """Every Qwen call goes through here so the preset always wins."""
+    return LLM.chat.completions.create(**kw, **_preset())
 
 
 def ensure_loaded(model: str = MODEL) -> None:
@@ -32,6 +47,14 @@ def ensure_loaded(model: str = MODEL) -> None:
                        capture_output=True, timeout=300)
     except (OSError, subprocess.SubprocessError, ValueError):
         pass  # ponytail: LM Studio will still load it on demand with its own defaults
+def unload_all() -> None:
+    """Free every model LM Studio holds (called before voices start). Silent no-op without the lms CLI."""
+    import shutil
+    import subprocess
+    try:
+        subprocess.run([shutil.which("lms") or "/usr/local/bin/lms", "unload", "--all"], capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        pass
 KINDS = ["speech", "thought", "narration", "heading", "text"]
 
 # double quotes (curly/straight) and single-quote speech (British style); apostrophes inside words never open a quote
@@ -76,7 +99,8 @@ H heading (chapter/section/person-name titles, date lines), X text (a letter, si
 - In a story told as "I", only the narrator's OWN words get the narrator's name; every other person who speaks gets their own
   name (from tags like "said Stamford", "returned my companion", "he said", or who was just addressed). A reply to a
   question is spoken by someone else. Never credit another person's words to the narrator.
-- emotion: a few words from the story context (e.g. "furious, voice shaking"; thoughts are "quiet, inward").
+- emotion: a few words from the story context (e.g. "furious, voice shaking"; thoughts are "quiet, inward"). It describes how the
+  CHARACTER sounds: when a dialogue tag names the manner ("he said angrily", "she whispered"), put that feeling on the quote's S line, never on the tag's N line.
 - spoken part: only for an S/T unit whose text ENDS with a dialogue tag that is not spoken (e.g. "Out, he said."):
   copy the exact leading words that ARE spoken ("Out,"). Never change a word. Otherwise leave it out.
 - End the line with ` ?` if you are guessing the speaker or code (a human will check those lines).
@@ -149,8 +173,8 @@ MOOD_SCHEMA = {"type": "object", "properties": {"mood": {"type": "string", "enum
 def pick_mood(text: str, model: str) -> str:
     """One forced-choice call (cannot answer "none"): the closest music mood for a passage."""
     try:
-        r = LLM.chat.completions.create(
-            model=model, temperature=0.2,
+        r = _chat(
+            model=model,
             messages=[{"role": "system", "content": "Pick the one mood that best fits this passage as background music for an audiobook."},
                       {"role": "user", "content": text}],
             response_format={"type": "json_schema", "json_schema": {"name": "mood", "schema": MOOD_SCHEMA}})
@@ -221,8 +245,8 @@ def parse_labels(reply: str, us: list[dict], mood: str) -> list[dict] | None:
 
 def label_chunk(us: list[dict], known: dict, carry: str, mood: str, model: str, retries: int = 3) -> list[dict]:
     for _ in range(retries):
-        r = LLM.chat.completions.create(
-            model=model, temperature=0.2,
+        r = _chat(
+            model=model,
             messages=[{"role": "system", "content": PROMPT.format(known=", ".join(known) or "none", carry=carry, mood=mood)},
                       {"role": "user", "content": _listing(us)}],
             response_format={"type": "json_schema", "json_schema": {"name": "lines", "schema": LINES_SCHEMA}})
@@ -241,8 +265,8 @@ def label_chunk(us: list[dict], known: dict, carry: str, mood: str, model: str, 
 
 def describe(names: list[str], sample: str, model: str, about: str = "") -> list[dict]:
     """One small call: gender / age group / voice description for newly seen characters."""
-    r = LLM.chat.completions.create(
-        model=model, temperature=0.2,
+    r = _chat(
+        model=model,
         messages=[{"role": "system", "content": "From the book excerpt, give gender, age group and a short description of the speaking VOICE (pitch, timbre, pace, accent; never the mood of the scene) for each listed character. If the excerpt does not tell, use the book background below if there is one (the excerpt wins if they disagree), else make the best guess from the name."},
                   {"role": "user", "content": f"{about}Characters: {', '.join(names)}\n\nExcerpt:\n{sample}"}],
         response_format={"type": "json_schema", "json_schema": {"name": "chars", "schema": CHARS_SCHEMA}})
@@ -274,7 +298,8 @@ def _split_tags(us: list[dict]) -> list[dict]:
 
 
 TAG_VERBS = re.compile(r"\b(said|says|asked|replied|answered|cried|remarked|returned|added|exclaimed|whispered|shouted|murmured|"
-                       r"observed|continued|called|muttered|inquired|suggested|declared|laughed|ejaculated|interrupted|went on)\b", re.I)
+                       r"observed|continued|called|muttered|inquired|suggested|declared|laughed|ejaculated|interrupted|went on|"
+                       r"snapped|growled|hissed|screamed|yelled|sobbed|shrieked|roared|bellowed|sighed|groaned|stammered|demanded|begged|pleaded|warned)\b", re.I)
 
 
 def fix_tags(us: list[dict]) -> None:
@@ -287,6 +312,53 @@ def fix_tags(us: list[dict]) -> None:
             u.update(kind="narration", speaker="Narrator", emotion="calm")
             if prev["kind"] in ("speech", "thought"):
                 prev["pause_after"] = min(prev["pause_after"], 0.15)
+
+
+# ponytail: -ly words that are not manners; a new false cue means adding it here (a real fix needs a POS tagger)
+NOT_MANNER = {"only", "early", "finally", "suddenly", "family", "reply", "really", "nearly", "immediately", "presently", "directly", "simply", "merely",
+              "hardly", "lately", "shortly", "usually", "certainly", "probably", "actually", "likely", "lovely", "lonely", "apply", "supply",
+              "italy", "july", "belly", "jelly", "silly", "holy", "ugly", "rely", "fly", "eventually", "obviously", "apparently", "recently", "exactly", "elderly", "highly", "considerably", "slightly", "truly"}
+VERB_CUE = {v: c for vs, c in (("shouted yelled screamed roared bellowed shrieked", "shouting"), ("whispered", "whispering"),
+            ("murmured muttered", "muttering, low"), ("cried exclaimed", "exclaiming"), ("snapped growled hissed", "sharp, angry"),
+            ("sobbed", "sobbing"), ("sighed groaned", "weary"), ("stammered", "stammering, nervous"), ("pleaded begged", "pleading")) for v in vs.split()}
+OPEN = ("", "calm", "quiet, inward")   # emotions the labeller left unset: a manner in the tag may fill these, a real one wins
+
+
+def _manner(t: str) -> str | None:
+    """How a tag says it: an -ly adverb near the verb (next 4 words, or the one before; names are capitalised so skipped; "faintly smiling"
+    is a participle phrase, not a manner), else an expressive verb's direction, else None. ponytail: word-window heuristic, no parsing."""
+    m = TAG_VERBS.search(t)
+    pre, post = re.findall(r"[A-Za-z']+", t[:m.start()]), re.findall(r"[A-Za-z']+", t[m.end():])
+    ws = pre[-1:] + post
+    for n in range(len(pre[-1:]) + min(4, len(post))):
+        w, nxt = ws[n], (ws[n + 1] if n + 1 < len(ws) else "")
+        if w.endswith("ly") and w.islower() and len(w) > 4 and w not in NOT_MANNER and not nxt.lower().endswith(("ing", "ed")):
+            return w
+    return VERB_CUE.get(m.group(1).lower())
+
+
+def fix_emotions(us: list[dict]) -> None:
+    """The feeling belongs to the quote, never the narrator's tag. A tag (short narration with a speech verb, next to a quote in the same
+    paragraph) is calm, and a manner it names ("said angrily", "whispered") moves onto the quote unless the labeller already gave it a
+    real emotion. All other narration keeps its emotion. ponytail: tags are <=80-char units; a long sentence holding a tag is left alone."""
+    for i, u in enumerate(us):
+        if u["kind"] != "narration" or len(u["text"]) > 80 or not TAG_VERBS.search(u["text"]):
+            continue
+        q = lambda n: us[n] if 0 <= n < len(us) and us[n]["kind"] in ("speech", "thought") else None
+        before = q(i - 1) if i and not us[i - 1]["para_end"] else None
+        after = q(i + 1) if not u["para_end"] else None
+        if not (before or after):
+            continue
+        u["emotion"] = "calm"
+        cue = _manner(u["text"])
+        if not cue:
+            continue
+        if before and before["emotion"] in OPEN:
+            before["emotion"] = cue
+            if after and after["speaker"] == before["speaker"] and after["emotion"] in OPEN:
+                after["emotion"] = cue
+        elif not before and after and after["emotion"] in OPEN:
+            after["emotion"] = cue
 
 
 _V = TAG_VERBS.pattern.replace("(", "(?:", 1)   # non-capturing, so the name groups below are 1 and 2
@@ -371,38 +443,6 @@ def fix_turns(us: list[dict]) -> None:
         prev_role, prev_at = (("me" if role == "me" else "other") if role else None), t["at"]
 
 
-EMPH_SCHEMA = {"type": "object", "properties": {"lines": {"type": "array", "items": {"type": "object", "properties": {
-    "id": {"type": "integer"}, "words": {"type": "array", "items": {"type": "string"}}}, "required": ["id", "words"]}}}, "required": ["lines"]}
-
-
-def mark_emphasis(lines: list[dict], model: str, batch: int = 20, tick=None) -> None:
-    """One call per ~20 lines: the 0-2 words a good reader would stress in each line. Stored as l["emphasis"] (only words that really
-    occur in the line, 4+ letters); the voice engine capitalises them. A failed call just leaves the lines unmarked."""
-    for k in range(0, len(lines), batch):
-        part = lines[k:k + batch]
-        if tick:
-            tick(k // batch)
-        try:
-            r = LLM.chat.completions.create(
-                model=model, temperature=0.2,
-                messages=[{"role": "system", "content": "You are an audiobook narrator preparing a script. For each numbered line give the 0 to 2 words "
-                           "you would stress when reading it aloud (the word carrying the meaning, contrast, or feeling). Use exact words from the "
-                           "line, never function words. Give an empty list for flat lines."},
-                          {"role": "user", "content": "\n".join(f"[{k + j}] {l['text']}" for j, l in enumerate(part))}],
-                response_format={"type": "json_schema", "json_schema": {"name": "emph", "schema": EMPH_SCHEMA}})
-            m = r.choices[0].message
-            got = json.loads(m.content or getattr(m, "reasoning_content", None) or "")["lines"]
-        except Exception:
-            continue
-        for g in got:
-            i = g.get("id", -1)
-            if k <= i < k + len(part):
-                text = lines[i]["text"]
-                ws = [w for w in g.get("words", [])[:2] if len(w) >= 4 and re.search(rf"\b{re.escape(w)}\b", text, re.I)]
-                if ws:
-                    lines[i]["emphasis"] = ws
-
-
 SFX_SCHEMA = {"type": "object", "properties": {"lines": {"type": "array", "items": {"type": "object", "properties": {
     "id": {"type": "integer"}, "sound": {"type": "string"}, "at": {"enum": ["start", "end"]}}, "required": ["id", "sound", "at"]}}}, "required": ["lines"]}
 
@@ -416,13 +456,13 @@ def mark_sfx(lines: list[dict], model: str, batch: int = 20, tick=None) -> None:
         if tick:
             tick(k // batch)
         try:
-            r = LLM.chat.completions.create(
-                model=model, temperature=0.2,
+            r = _chat(
+                model=model,
                 messages=[{"role": "system", "content": "You add sound effects to an audiobook. For each numbered line that names a clear, distinctive NOISE the listener "
                            "would hear in the scene, give one short English prompt for a sound-effect generator and whether the sound happens at the start of the "
                            "line or at the end of it. Good: knocking on a door, fingers drumming or tapping on a table, a dog barking, a horse's hooves, a bird, "
                            "a clock ticking or striking, a door slamming, a gunshot, thunder, rain, a violin or piano being played, a bell, a carriage on cobblestones. "
-                           "Never: voices, laughing, crying, sighing, speech, touching, handshakes, small gestures, footsteps or movement without a loud noise, "
+                           "Only noises the narration says are heard in the scene (tires screeching, bells, birdsong, traffic, a knock). Never: voices, laughing, crying, sighing, speech, touching, handshakes, small gestures, footsteps or movement without a loud noise, "
                            "metaphors, silence, or anything the text does not clearly say is heard. Be strict: a typical page has zero or one. "
                            "Return only the lines that qualify."},
                           {"role": "user", "content": "\n".join(f"[{k + j}] {l['text']}" for j, l in enumerate(part))}],
@@ -431,9 +471,10 @@ def mark_sfx(lines: list[dict], model: str, batch: int = 20, tick=None) -> None:
             got = json.loads(m.content or getattr(m, "reasoning_content", None) or "")["lines"]
         except Exception:
             continue
-        for g in got:
+        for g in sorted(got, key=lambda g: g.get("id", -1)):
             i, sound = g.get("id", -1), (g.get("sound") or "").strip()
-            if k <= i < k + len(part) and 3 <= len(sound) <= 80:
+            if (k <= i < k + len(part) and 3 <= len(sound) <= 80 and lines[i].get("kind") not in ("speech", "thought")
+                    and not (i and lines[i - 1].get("sfx"))):   # a sound named inside dialogue is talk about it; never two lines in a row
                 lines[i]["sfx"] = [{"prompt": sound, "at": g.get("at") if g.get("at") in ("start", "end") else "start"}]
 
 
@@ -456,12 +497,16 @@ def merge(us: list[dict]) -> list[dict]:
     return lines
 
 
+LABEL_W, SFX_W = 3, 1
+
+
 def annotate_chapter(text: str, model: str = MODEL, progress=None, about: str = "") -> dict:
     """Returns {characters, units (one label per unit, for agreement checks), lines (merged, for rendering)}."""
     chars, labelled, carry, mood = {}, [], "", "none"
     parts = chunk(units(text))
-    nb = -(-sum(len(p) for p in parts) // 20)   # emphasis + sfx batches that follow the labelling (upper bound: merging only shrinks it), so the bar doesn't stall at 99%
-    total = len(parts) + 2 * nb
+    # Progress is weighted work: LABEL_W : SFX_W is the measured 32 s (one label call) : 10 s (one 20-line sfx batch) ratio, so the web ETA is honest.
+    nb_est = -int(-0.55 * sum(len(p) for p in parts) // 20)   # 310 merged lines came from 586 units on the measured chapter
+    total = LABEL_W * len(parts) + SFX_W * nb_est
     for k, part in enumerate(parts):
         labels = label_chunk(part, chars, carry, mood, model)
         n0 = len(labelled)
@@ -480,21 +525,25 @@ def annotate_chapter(text: str, model: str = MODEL, progress=None, about: str = 
                 chars[c["name"]] = c
         mood = next((u["mood"] for u in reversed(labelled) if u["mood"] != "none"), "none")  # carry the last real mood, not a heading's "none"
         if progress:
-            progress(k + 1, total)
+            progress(LABEL_W * (k + 1), total)
         last = labelled[-1]
         carry = (f"The previous unit was labelled kind={last['kind']}, speaker={last['speaker']}. "
                  "If this chunk continues a monologue or scene, keep the same speaker.")
     fix_turns(labelled)
+    fix_emotions(labelled)
     late = sorted({u["speaker"] for u in labelled if u["speaker"] != "Narrator"} - chars.keys())   # e.g. a name only a tag gave
     if late:
         for c in describe(late, " ".join(u["text"] for u in labelled if u["speaker"] in late)[:1500], model, about):
             chars[c["name"]] = c
     used = {u["speaker"] for u in labelled}
     lines = merge(labelled)
+    nb = -(-len(lines) // 20)   # real sfx batch count; correct the total once
+    done0, total = LABEL_W * len(parts), LABEL_W * len(parts) + SFX_W * nb
     if progress:
-        progress(len(parts), total, "Marking stressed words")
-    mark_emphasis(lines, model, tick=progress and (lambda i: progress(len(parts) + i, total, "Marking stressed words")))
-    mark_sfx(lines, model, tick=progress and (lambda i: progress(len(parts) + nb + i, total, "Spotting sound effects")))
+        progress(done0, total, "Spotting sound effects")
+    mark_sfx(lines, model, tick=progress and (lambda i: progress(done0 + SFX_W * i, total, "Spotting sound effects")))
+    if progress:
+        progress(total, total, "Spotting sound effects")
     return {"characters": [c for n, c in chars.items() if n in used], "units": labelled, "lines": lines}
 
 
