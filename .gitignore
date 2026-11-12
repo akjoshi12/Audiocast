@@ -236,3 +236,10 @@ android/.gradle/
 android/local.properties
 __pycache__/
 graphify-out/
+
+# local generated / working files (not part of the project)
+scripts/overnight.sh
+video/SPEC.md
+video/STORYLINES.md
+video/.thumbnails/
+video/.waveform-cache/
