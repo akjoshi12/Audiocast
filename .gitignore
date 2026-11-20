@@ -243,3 +243,9 @@ video/SPEC.md
 video/STORYLINES.md
 video/.thumbnails/
 video/.waveform-cache/
+
+.venv-tango/
+gpu_test/
+music_test/
+accent_test/
+*.mp3
