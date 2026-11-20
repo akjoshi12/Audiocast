@@ -267,7 +267,7 @@ def describe(names: list[str], sample: str, model: str, about: str = "") -> list
     """One small call: gender / age group / voice description for newly seen characters."""
     r = _chat(
         model=model,
-        messages=[{"role": "system", "content": "From the book excerpt, give gender, age group and a short description of the speaking VOICE (pitch, timbre, pace, accent; never the mood of the scene) for each listed character. If the excerpt does not tell, use the book background below if there is one (the excerpt wins if they disagree), else make the best guess from the name."},
+        messages=[{"role": "system", "content": "From the book excerpt, give gender, age group and a short description of the speaking VOICE (pitch, timbre, pace, accent; never the mood of the scene) for each listed character. If the excerpt does not tell, use the book background below if there is one (the excerpt wins if they disagree), else make the best guess from the name. If a character does not speak in the excerpt, still describe the voice from the book background and from what you know of that character in this book (a giant, gruff man with a rough rural burr; a frail old man with a calm, gentle, high voice). Never answer that the excerpt has no dialogue; always give concrete pitch, timbre, pace and accent."},
                   {"role": "user", "content": f"{about}Characters: {', '.join(names)}\n\nExcerpt:\n{sample}"}],
         response_format={"type": "json_schema", "json_schema": {"name": "chars", "schema": CHARS_SCHEMA}})
     m = r.choices[0].message
@@ -276,6 +276,19 @@ def describe(names: list[str], sample: str, model: str, about: str = "") -> list
     except (json.JSONDecodeError, KeyError):
         got = {}
     return [got.get(n, {"name": n, "gender": "unknown", "age": "adult", "voice": ""}) for n in names]
+
+
+LEAD_IN = re.compile(r"^([^‘“\"']{8,200}?:\s*)(?=[‘“\"'])")
+
+
+def split_lead(u: dict) -> list[dict]:
+    """A speech unit that opens with narration up to a colon before the quote ("he said in a squeaky voice: 'Don't be sorry'") gives that
+    lead-in to the narrator; the quote stays with the character."""
+    m = LEAD_IN.match(u["text"])
+    if m and u["kind"] in ("speech", "thought") and TAG_VERBS.search(m.group(1)) and len(u["text"]) - m.end() > 3:
+        return [{**u, "text": m.group(1).strip(" :"), "kind": "narration", "speaker": "Narrator", "emotion": "calm", "pause_after": 0.15},
+                {**u, "text": u["text"][m.end():]}]
+    return [u]
 
 
 def _split_tags(us: list[dict]) -> list[dict]:
@@ -293,7 +306,7 @@ def _split_tags(us: list[dict]) -> list[dict]:
             out.append({**u, "text": sp, "para_end": False, "pause_after": 0.15})
             out.append({**u, "text": rest, "kind": "narration", "speaker": "Narrator", "emotion": "calm"})
         else:
-            out.append(u)
+            out.extend(split_lead(u))
     return out
 
 
@@ -444,13 +457,20 @@ def fix_turns(us: list[dict]) -> None:
 
 
 SFX_SCHEMA = {"type": "object", "properties": {"lines": {"type": "array", "items": {"type": "object", "properties": {
-    "id": {"type": "integer"}, "sound": {"type": "string"}, "at": {"enum": ["start", "end"]}}, "required": ["id", "sound", "at"]}}}, "required": ["lines"]}
+    "id": {"type": "integer"}, "sound": {"type": "string"}, "at": {"enum": ["start", "end"]}}, "required": ["id", "sound", "at"]}},
+    "ambience": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "integer"}, "sound": {"type": "string"}}, "required": ["id", "sound"]}}},
+    "required": ["lines", "ambience"]}
+
+
+# voice-like or hissy prompts come out as gibberish or static from a sound model, whatever the LLM was told
+BAD_SOUND = re.compile(r"\b(voice|voices|whisper\w*|talk\w*|speech|speak\w*|crowd|chatter|murmur\w*|radio|tv|television|static|news|anchor|laugh\w*|sing\w*|music)\b", re.I)
 
 
 def mark_sfx(lines: list[dict], model: str, batch: int = 20, tick=None) -> None:
     """One call per ~20 lines: lines whose text names a sound the listener would hear (a knock, fingers tapping, a bark, hooves, a clock).
     Stored as l["sfx"] = [{prompt, at}]; the sound-effect model turns the prompt into a short clip. Figurative or silent mentions get none,
     and a failed call leaves the lines as they are."""
+    cur = ""   # ambience still playing at the end of the previous batch
     for k in range(0, len(lines), batch):
         part = lines[k:k + batch]
         if tick:
@@ -462,18 +482,33 @@ def mark_sfx(lines: list[dict], model: str, batch: int = 20, tick=None) -> None:
                            "would hear in the scene, give one short English prompt for a sound-effect generator and whether the sound happens at the start of the "
                            "line or at the end of it. Good: knocking on a door, fingers drumming or tapping on a table, a dog barking, a horse's hooves, a bird, "
                            "a clock ticking or striking, a door slamming, a gunshot, thunder, rain, a violin or piano being played, a bell, a carriage on cobblestones. "
-                           "Only noises the narration says are heard in the scene (tires screeching, bells, birdsong, traffic, a knock). Never: voices, laughing, crying, sighing, speech, touching, handshakes, small gestures, footsteps or movement without a loud noise, "
-                           "metaphors, silence, or anything the text does not clearly say is heard. Be strict: a typical page has zero or one. "
-                           "Return only the lines that qualify."},
-                          {"role": "user", "content": "\n".join(f"[{k + j}] {l['text']}" for j, l in enumerate(part))}],
+                           "Only noises the narration says are heard in the scene (tires screeching, bells, birdsong, traffic, a knock). Never: voices, laughing, sighing, speech, or gestures that make no sound (a nod, a glance, a handshake), "
+                           "metaphors, silence, or anything the text does not clearly say is heard. Be generous: every distinct noise the text names or the action clearly implies gets one (a car pulling away, a door, footsteps on gravel, a cup set down, a briefcase dropped, a bird, a baby crying), up to four in a batch. "
+                           "Return only the lines that qualify. "
+                           "Also give `ambience`: for EVERY numbered line, the quiet background sound of the place or situation that would be heard under it, as a short "
+                           "sound-generator prompt (\"windscreen wipers swishing and a car engine humming, rain on the roof\", \"a toddler screaming and crying in another room, muffled\", "
+                           "\"birds and a distant lawnmower in a suburban street\", \"an office, keyboards clicking and a phone ringing softly\"). Read the scene: where are we, what is going on around the speakers, "
+                           "what object or creature is making noise nearby. Change the prompt EVERY time the location or situation changes (a kitchen at breakfast, a car, an office, a street at night, a living room) and name the concrete sounds of that place and of whatever the text mentions nearby (a child crying, wipers, a clock); a short moment can have its own prompt for just a line or two. Repeat the prompt word for word only while the scene truly continues; "
+                           "empty string when the scene is silent, the line is a heading, or the text names no place, object or sound to hang it on (do not invent a setting). "
+                           "The sound generator is good at ONE or TWO clear physical sounds made by objects, weather, animals or machines, and bad at busy mixtures. "
+                           "So never write crowds, people talking, voices, chatter, murmuring, whispering, laughing, music, radio or TV talk, and never the words busy, bustling, lively or atmosphere: "
+                           "replace the people with the objects they are moving (a market becomes \"wooden cart wheels on cobblestones and a distant hammering\", a pub becomes \"glasses clinking and a fire crackling\", a school corridor becomes \"footsteps echoing on a hard floor and a door banging\", a station becomes \"a train rumbling past and a distant bell\"). "
+                           "Quiet is better than loud: add \"distant\" or \"soft\" for anything in the background. Good: \"rain on a window and a clock ticking\", \"wind in leaves and a distant dog barking\". Bad: \"busy medieval market crowd ambience\", \"lively party with chatter and music\"."},
+                          {"role": "user", "content": (f"Ambience playing before these lines: {cur}\n" if cur else "") + "\n".join(f"[{k + j}] {l['text']}" for j, l in enumerate(part))}],
                 response_format={"type": "json_schema", "json_schema": {"name": "sfx", "schema": SFX_SCHEMA}})
             m = r.choices[0].message
-            got = json.loads(m.content or getattr(m, "reasoning_content", None) or "")["lines"]
+            data = json.loads(m.content or getattr(m, "reasoning_content", None) or "")
+            got = data["lines"]
         except Exception:
             continue
+        for g in data.get("ambience", []):
+            i, sound = g.get("id", -1), (g.get("sound") or "").strip()
+            if k <= i < k + len(part):
+                lines[i]["bed"] = sound if 3 <= len(sound) <= 120 and not BAD_SOUND.search(sound) else ""
+        cur = lines[min(k + len(part), len(lines)) - 1].get("bed", "")
         for g in sorted(got, key=lambda g: g.get("id", -1)):
             i, sound = g.get("id", -1), (g.get("sound") or "").strip()
-            if (k <= i < k + len(part) and 3 <= len(sound) <= 80 and lines[i].get("kind") not in ("speech", "thought")
+            if (k <= i < k + len(part) and 3 <= len(sound) <= 80 and not BAD_SOUND.search(sound) and lines[i].get("kind") not in ("speech", "thought")
                     and not (i and lines[i - 1].get("sfx"))):   # a sound named inside dialogue is talk about it; never two lines in a row
                 lines[i]["sfx"] = [{"prompt": sound, "at": g.get("at") if g.get("at") in ("start", "end") else "start"}]
 
@@ -545,6 +580,25 @@ def annotate_chapter(text: str, model: str = MODEL, progress=None, about: str = 
     if progress:
         progress(total, total, "Spotting sound effects")
     return {"characters": [c for n, c in chars.items() if n in used], "units": labelled, "lines": lines}
+
+
+CALLOUT = re.compile(r"^(key (takeaways?|points?|ideas?|lessons?)|takeaways?|in summary|chapter summary|summary|the bottom line|bottom line|action steps?|action items?|remember|your turn|try this|exercise)\s*([:\-–—.]|$)", re.I)
+
+
+def plain_chapter(text: str) -> dict:
+    """Non-fiction / self-help: one narrator, no characters, no LLM pass. A short standalone line with no closing punctuation is a heading;
+    paragraphs get a longer pause than sentences. Same shape as annotate_chapter."""
+    us = units(text)
+    for u in us:
+        head = u["para_end"] and (not us[u["id"] - 1]["para_end"] if u["id"] else True) and len(u["text"]) <= 70 and not re.search(r"[.!?:;,”\"’']$", u["text"])
+        u.update(kind="heading" if head else "narration", speaker="Narrator", emotion="calm", mood="none", unsure=False,
+                 pause_after=1.2 if head else 0.9 if u["para_end"] else 0.3)
+    lines = merge(us)
+    for l in lines:
+        l["chime"] = bool(CALLOUT.match(l["text"])) or None   # a bell before a takeaway; None keeps ordinary lines unmarked
+        if l["chime"] is None:
+            del l["chime"]
+    return {"characters": [], "units": us, "lines": lines}
 
 
 def agreement(a: list[dict], b: list[dict]) -> dict:

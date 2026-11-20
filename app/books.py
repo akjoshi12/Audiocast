@@ -259,7 +259,43 @@ def _pdf(path: Path) -> list[dict]:
         chapters = split_by_outline(entries, pages, drop)
         if len(chapters) >= 3:
             return chapters
-    return _split_by_headings(reflow(pages, drop))
+    text = reflow(pages, drop)
+    if not CHAPTER_RE.search(text) and len(chapters := _split_by_big_font(r, path)) >= 3:
+        return chapters
+    return _split_by_headings(text)
+
+
+def _split_by_big_font(r, path: Path) -> list[dict]:
+    """No bookmarks and no "Chapter N" ("The Syllabus", "The First Tuesday ..."): headings are the lines set in a larger font than the body.
+    Text comes from pdftotext, which drops the overprinted copies of faux-bold headings that garble pypdf's text."""
+    import subprocess
+    from collections import Counter
+    try:
+        clean = subprocess.run(["pdftotext", str(path), "-"], capture_output=True, text=True, check=True).stdout.split("\f")
+    except (OSError, subprocess.CalledProcessError):
+        return []
+    runs, sizes = [], Counter()   # (page, size, text)
+    for n, p in enumerate(r.pages):
+        def v(t, cm, tm, fd, fs, n=n):
+            if t.strip():
+                s = round(fs * abs(tm[3] or tm[0]) * abs(cm[3] or 1), 1)
+                runs.append((n, s, t)); sizes[s] += len(t)
+        p.extract_text(visitor_text=v)
+    if not sizes or len(clean) < len(r.pages):
+        return []
+    body = sizes.most_common(1)[0][0]
+    big = {}
+    for n, s, t in runs:
+        if s >= body * 1.15:   # calibration knob: how much larger than body text a heading must be
+            big[n] = big.get(n, "") + _squash(t)[0]
+    entries = []
+    for n, b in big.items():
+        for l in clean[n].split("\n"):
+            sq = _squash(l)[0]
+            if 3 <= len(sq) and len(l) < 100 and not END_RE.search(l.strip()) and sq[:15] in b and not any(e[0] == l.strip() for e in entries):
+                entries.append((l.strip(), n, ()))
+    entries.sort(key=lambda e: (e[1], clean[e[1]].find(e[0])))
+    return split_by_outline(entries, clean[:len(r.pages)], running_junk(clean)) if len(entries) >= 3 else []
 
 
 def guess_details(path: str | Path, name: str = "") -> dict:

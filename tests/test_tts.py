@@ -163,10 +163,33 @@ def test_speak_never_caps_narrator(monkeypatch):
 def test_line_file_narrator_name_stable_character_changes():
     from pathlib import Path
     l = {"text": "Hello there.", "emotion": "calm"}
-    assert tts.line_file(Path("c"), 3, l, tts.NARRATOR_VOICE).name == "00003_287ebc0a63.wav"
-    assert tts.line_file(Path("c"), 3, l, "clone:voices/x.wav").name != "00003_99f5e050ae.wav"
+    n = lambda x: tts.line_file(Path("c"), 3, x, tts.NARRATOR_VOICE).name
+    assert n(l) != "00003_287ebc0a63.wav"                     # nar2 (continuation-cloned narrator): every pre-nar2 narrator take is re-rendered
+    assert n(l) == n({**l, "emotion": "furious"})            # the narrator ignores emotion, so changing it must not re-render the line
+    assert tts.line_file(Path("c"), 3, l, "clone:voices/x.wav").name != tts.line_file(Path("c"), 3, {**l, "emotion": "furious"}, "clone:voices/x.wav").name
 
 
 def test_no_brisk_voice_designs():
     assert not any("brisk" in x for x in tts.PACE + tts.VARIETY)
     assert tts.contrast({"pace": "slow"})["pace"] == "measured"
+
+
+def test_tempo_changes_the_cache_name_only_when_it_is_not_one():
+    from pathlib import Path
+    l = {"text": "Hello there.", "emotion": "calm"}
+    n = lambda **k: tts.line_file(Path("c"), 1, l, "clone:v.wav", **k).name
+    assert n() == n(tempo=1.0) and n(tempo=0.92) != n()
+
+
+def test_accent_reaches_voice_prompt_and_narrator_cache(tmp_path):
+    from app import tts
+    assert "Accent: Indian" in tts.voice_prompt({"gender": "male", "age": "adult"}, 0, accent="Indian")
+    assert "accent" not in tts.voice_prompt({"gender": "male", "age": "adult"}, 0)
+    l = {"text": "Hello", "emotion": "", "pause_after": 0.1}
+    default = tts.line_file(tmp_path, 0, l, tts.NARRATOR_VOICE)
+    tts.use_narrator(tmp_path / "narr_ab12.wav", "x")
+    try:
+        assert tts.line_file(tmp_path, 0, l, tts.NARRATOR_VOICE) != default   # a book's own narrator never reuses the default narrator's takes
+    finally:
+        tts.use_narrator()
+    assert tts.line_file(tmp_path, 0, l, tts.NARRATOR_VOICE) == default

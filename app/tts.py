@@ -19,11 +19,19 @@ VOICES = {
     "male": ["ryan", "aiden", "eric", "dylan", "uncle_fu"],
 }
 NARRATOR_VOICE = "narrator_ref"   # VoxCPM2 clone of voices/narrator_ref.wav ("a_warm_elder", chosen by the user)
-NARRATOR_REF = Path(__file__).resolve().parent.parent / "voices" / "narrator_ref.wav"
+NARRATOR_REF = DEFAULT_NARRATOR_REF = Path(__file__).resolve().parent.parent / "voices" / "narrator_ref.wav"
 NARRATOR_REF_TEXT = ("I’m pretty much screwed. That’s my considered opinion. Screwed. Six days in to what should be a greatest two months of my life, "
                      "and it’s turned in to a nightmare. I don’t even know who’ll read this. I guess someone will find it eventually.")
 
 ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_NARRATOR_REF_TEXT = NARRATOR_REF_TEXT
+
+
+def use_narrator(ref: Path | None = None, text: str | None = None) -> None:
+    """Pick the narrator's reference voice for the render about to run (a book with its own accent has a designed one); None = the default.
+    ponytail: module global, fine because heavy jobs run one at a time behind a lock."""
+    global NARRATOR_REF, NARRATOR_REF_TEXT
+    NARRATOR_REF, NARRATOR_REF_TEXT = (ref or DEFAULT_NARRATOR_REF), (text or DEFAULT_NARRATOR_REF_TEXT)
 DESIGN_TEXT = ("I never thought I would see you again, not after everything that happened. "
                "But here we are, and there is a great deal to say before the night is over.")
 VARIETY = ["", "higher-pitched and bright", "low and gravelly", "soft and slow", "crisp and clear", "warm and breathy"]
@@ -75,13 +83,13 @@ def contrast(avoid: dict | None = None) -> dict:
     return {"pitch": pick(PITCH, "pitch"), "timbre": pick(TIMBRE, "timbre"), "pace": pick(PACE, "pace")}
 
 
-def voice_prompt(c: dict, k: int, hint: dict | None = None) -> str:
+def voice_prompt(c: dict, k: int, hint: dict | None = None, accent: str = "") -> str:
     """Description for the voice-design model. k = how many characters of the same gender/age already exist (pushes look-alikes
     apart); hint = explicit pitch/timbre/pace. Unknown gender/age is left out rather than invented."""
     who = " ".join(x for x in (c.get("age") if c.get("age") != "unknown" else "", c.get("gender") if c.get("gender") in ("male", "female") else "") if x) or "adult"
     traits = "" if "excerpt" in (c.get("voice") or "").lower() else (c.get("voice") or "")  # the describer sometimes writes about the excerpt, not the voice
     extra = f"{hint['pitch']}-pitched, {hint['timbre']}, {hint['pace']} pace." if hint else VARIETY[k % len(VARIETY)]
-    return f"{'An' if who[0] in 'aeiou' else 'A'} {who} speaking voice. {traits} {extra}".strip()
+    return f"{'An' if who[0] in 'aeiou' else 'A'} {who} speaking voice. {traits} {extra}{f' Accent: {accent}.' if accent else ''}".strip()
 
 
 def ref_pitch(path: Path) -> int:
@@ -156,11 +164,12 @@ def _speak_vox(text: str, voice: str, emotion: str, depth: int = 0, retried: boo
     the model samples randomly and has failed with an array-shape error on some takes."""
     from scipy.signal import resample_poly
     ref = NARRATOR_REF if voice == NARRATOR_VOICE else ROOT / voice[6:]
-    direction = ", ".join(x for x in (NARRATOR_DIRECTION if voice == NARRATOR_VOICE else "", emotion.strip()) if x)
+    narrator = voice == NARRATOR_VOICE   # the narrator never gets a style direction: it drifted the timbre from line to line; emotion lives in the characters, beds and effects
+    direction = "" if narrator else emotion.strip()
     fd, out = tempfile.mkstemp(suffix=".wav")
     os.close(fd)
     try:
-        _vox_ask({"text": f"({direction}) {text}" if direction else text, "ref": str(ref), "out": out})
+        _vox_ask({"text": f"({direction}) {text}" if direction else text, "ref": str(ref), "out": out, **({"prompt_text": NARRATOR_REF_TEXT} if narrator else {})})
         a, sr = sf.read(out, dtype="float32")
     except RuntimeError:
         mid = text.rfind(" ", 0, len(text) // 2 + 1)
@@ -237,11 +246,12 @@ def pace(a: np.ndarray, text: str, max_wpm: float = CHAR_MAX_WPM) -> np.ndarray:
     return a if rate <= max_wpm else slow(a, max(max_wpm / rate, MIN_TEMPO))
 
 
-def speak(text: str, voice: str, emotion: str) -> np.ndarray:
+def speak(text: str, voice: str, emotion: str, tempo: float = 1.0) -> np.ndarray:   # tempo < 1 slows every piece (non-fiction books)
     out = []
     for t in split_text(text):
         a = tighten(_speak_piece(t, voice, emotion))
         a = a if voice == NARRATOR_VOICE else pace(a, t)
+        a = slow(a, tempo) if tempo != 1.0 else a
         out += [a, np.zeros(int(SR * GAPS.get(t.rstrip("\"”’')")[-1:], 0.3)), dtype=np.float32)]
     return np.concatenate(out[:-1]) if out else np.zeros(0, dtype=np.float32)
 
@@ -250,40 +260,41 @@ def _voice_for(l: dict, cast: dict[str, str]) -> str:
     return cast.get(l["speaker"], cast.get("Narrator", NARRATOR_VOICE))
 
 
-def line_file(cache: Path, i: int, l: dict, voice: str) -> Path:
+def line_file(cache: Path, i: int, l: dict, voice: str, tempo: float = 1.0) -> Path:
     """Cache name includes a hash of what is spoken, so editing a line re-renders only that line."""
     # the hashed string is frozen so re-rendering hours of narrator audio is not needed: engine literal, TEMPO and the (now unused) 'emphasis' key stay in it
     engine = "voxcpm" if voice == NARRATOR_VOICE or voice.startswith("clone:") else ""
-    h = hashlib.md5((f"{voice}|{engine}|{TIGHTEN}|{TEMPO}|{l['emotion']}|{l['text']}|{l.get('emphasis', '')}" + ('' if voice == NARRATOR_VOICE else f"|wpm{CHAR_MAX_WPM}")).encode()).hexdigest()[:10]
+    emo = ("|nar2" + ("" if NARRATOR_REF == DEFAULT_NARRATOR_REF else f"|{NARRATOR_REF.stem}")) if voice == NARRATOR_VOICE else l["emotion"]   # a book's own narrator voice re-renders its lines   # nar2: continuation-cloned narrator, emotion ignored, so every older narrator take is re-rendered
+    h = hashlib.md5((f"{voice}|{engine}|{TIGHTEN}|{TEMPO}|{emo}|{l['text']}|{l.get('emphasis', '')}" + ('' if voice == NARRATOR_VOICE else f"|wpm{CHAR_MAX_WPM}") + (f"|t{tempo}" if tempo != 1.0 else "")).encode()).hexdigest()[:10]
     return cache / f"{i:05d}_{h}.wav"
 
 
-def spans(lines: list[dict], cast: dict[str, str], folder: Path) -> list[tuple[float, float]]:
+def spans(lines: list[dict], cast: dict[str, str], folder: Path, tempo: float = 1.0) -> list[tuple[float, float]]:
     """(start, end) seconds of each line's speech inside chapter.wav, from the cached line wavs."""
     t, out = 0.0, []
     for i, l in enumerate(lines):
-        d = sf.info(line_file(folder / "lines", i, l, _voice_for(l, cast))).duration
+        d = sf.info(line_file(folder / "lines", i, l, _voice_for(l, cast), tempo)).duration
         out.append((t, t + d))
         t += d + max(l["pause_after"], 0.1)
     return out
 
 
-def render(lines: list[dict], cast: dict[str, str], folder: Path, progress=None) -> Path:
+def render(lines: list[dict], cast: dict[str, str], folder: Path, progress=None, tempo: float = 1.0) -> Path:
     """Render every line (cached), join with pauses, return the wav path."""
     cache = folder / "lines"
     cache.mkdir(parents=True, exist_ok=True)
     pieces = []
     for i, l in enumerate(lines):
         voice = _voice_for(l, cast)
-        f = line_file(cache, i, l, voice)
+        f = line_file(cache, i, l, voice, tempo)
         if not f.exists():
-            sf.write(f, speak(l["text"], voice, l["emotion"]), SR)
+            sf.write(f, speak(l["text"], voice, l["emotion"], tempo), SR)
         pieces += [sf.read(f, dtype="float32")[0],
                    np.zeros(int(SR * max(l["pause_after"], 0.1)), dtype=np.float32)]
         if progress:
             progress(i + 1, len(lines))
     for old in cache.glob("*.wav"):  # drop cache files of lines that no longer exist or changed
-        if old not in {line_file(cache, j, m, _voice_for(m, cast)) for j, m in enumerate(lines)}:
+        if old not in {line_file(cache, j, m, _voice_for(m, cast), tempo) for j, m in enumerate(lines)}:
             old.unlink()
     out = folder / "chapter.wav"
     sf.write(out, np.concatenate(pieces), SR)

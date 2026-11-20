@@ -1,5 +1,6 @@
 import hashlib
 import re
+import shutil
 from collections import Counter
 import random
 import io
@@ -20,7 +21,7 @@ from app.books import extract_chapters, guess_details
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 MUSIC_CACHE = DATA / "music_cache"
-MUSIC_ON = True   # music is back but sparing: only non-calm scenes, capped per cue (music.MAX_CUE_S); False hides it again (and re-hide #musicRow in index.html)
+MUSIC_ON = True   # quiet mood music on fiction only: non-calm scenes, capped per cue (music.MAX_CUE_S); False turns it off everywhere
 app = FastAPI(title="Full-Cast Audiobook")
 
 
@@ -183,7 +184,7 @@ def book_info(book_id: str):
     about = json.loads((d / "about.json").read_text()) if (d / "about.json").exists() else None
     return {"id": book_id, "name": meta.get("name", book_id), "title": meta.get("title", ""), "author": meta.get("author", ""),
             "cover": bool(list(d.glob("cover.*")) or (d / "source.pdf").exists()),
-            "lookup": meta.get("lookup", False), "found": about and {"page": about["page"], "url": about["url"]},
+            "lookup": meta.get("lookup", False), "kind": meta.get("kind", "fiction"), "accent": meta.get("accent", ""), "found": about and {"page": about["page"], "url": about["url"]},
             "chapters": [{"n": i + 1, "title": c["title"], "part": c.get("part", ""), "chars": len(c["text"]),
                           "analyzed": (d / f"ch{i+1:02d}" / "script.json").exists(),
                           "rendered": (d / f"ch{i+1:02d}" / "chapter.mp3").exists()}
@@ -221,6 +222,8 @@ class About(BaseModel):
     title: str
     author: str = ""
     lookup: bool = False
+    kind: str = "fiction"   # "nonfiction": one narrator, no characters, no effects
+    accent: str = ""   # "" = as the AI guesses; else every new voice (and a designed narrator) gets this accent
 
 
 @app.put("/api/books/{book_id}/about")
@@ -228,7 +231,11 @@ def set_about(book_id: str, body: About):
     """Title/author help the AI recognise a known book. With lookup on, Wikipedia is asked once (title and author only)."""
     d = _dir(book_id)
     meta = json.loads((d / "meta.json").read_text())
-    meta.update(title=body.title.strip(), author=body.author.strip(), lookup=body.lookup)
+    meta.update(title=body.title.strip(), author=body.author.strip(), lookup=body.lookup, kind="nonfiction" if body.kind == "nonfiction" else "fiction")
+    accent = body.accent.strip()[:40]
+    if accent != meta.get("accent", ""):
+        meta.pop("narrator_ref", None)   # new accent -> the narrator is designed afresh at the next render
+    meta["accent"] = accent
     (d / "about.json").unlink(missing_ok=True)
     if body.lookup and meta["title"]:
         try:
@@ -245,9 +252,10 @@ def _about(book_id: str) -> str:
     """Prompt text: the book's identity plus any looked-up background, for describing characters the chapter leaves vague."""
     d = _dir(book_id)
     meta = json.loads((d / "meta.json").read_text()) if (d / "meta.json").exists() else {}
+    acc = f"Every character's voice description must use a {meta['accent']} accent (the book's setting and names call for it).\n\n" if meta.get("accent") else ""
     if not meta.get("title"):
-        return ""
-    out = f"Book: {meta['title']}" + (f" by {meta['author']}" if meta.get("author") else "") + ".\n"
+        return acc
+    out = acc + f"Book: {meta['title']}" + (f" by {meta['author']}" if meta.get("author") else "") + ".\n"
     if (d / "about.json").exists():
         out += "Background from Wikipedia (may be incomplete; use it only for facts about the characters):\n" + json.loads((d / "about.json").read_text())["text"] + "\n\n"
     return out
@@ -296,6 +304,32 @@ def _apply_aliases(book_id: str, s: dict) -> dict:
     return {**s, "characters": chars}
 
 
+def _meta(book_id: str) -> dict:
+    f = DATA / book_id / "meta.json"
+    return json.loads(f.read_text()) if f.exists() else {}
+
+
+def _accent(book_id: str) -> str:
+    return _meta(book_id).get("accent", "")
+
+
+def _use_narrator(book_id: str, progress=None) -> None:
+    """A book with an accent gets its own narrator voice, designed once (and again after the accent changes); otherwise the default one."""
+    meta = _meta(book_id)
+    accent, notes = _accent(book_id), meta.get("narrator_notes", "")
+    if not accent and not notes:
+        return tts.use_narrator()
+    ref = tts.ROOT / meta["narrator_ref"] if meta.get("narrator_ref") else None
+    if not (ref and ref.exists()):
+        if progress:
+            progress(0, 1, "Designing the narrator voice")
+        ref = DATA / book_id / "voices" / f"narr_{uuid.uuid4().hex[:8]}.wav"
+        tts.design_voice(f"{notes or 'A deep, warm, unhurried male audiobook narrator, calm and clear'}." + (f" Accent: {accent}." if accent else ""), ref)
+        meta["narrator_ref"] = str(ref.relative_to(tts.ROOT))
+        (DATA / book_id / "meta.json").write_text(json.dumps(meta))
+    tts.use_narrator(ref, tts.DESIGN_TEXT)
+
+
 def _cast_file(book_id: str) -> Path:
     return DATA / book_id / "cast.json"
 
@@ -307,7 +341,7 @@ def _book_cast(book_id: str) -> dict:
 
 def _design(book_id: str, c: dict, k: int, hint: dict | None = None) -> dict:
     """New wav (fresh file name, so cached lines of an old voice are not reused) + its cast entry."""
-    prompt = tts.voice_prompt(c, k, hint)
+    prompt = tts.voice_prompt(c, k, hint, _accent(book_id))
     wav = DATA / book_id / "voices" / f"{uuid.uuid4().hex[:8]}.wav"
     tts.design_voice(prompt, wav)
     return {"voice": "clone:" + str(wav.relative_to(tts.ROOT)), "desc": prompt, "traits": c.get("voice", ""), "gender": c.get("gender", "unknown"),
@@ -317,7 +351,7 @@ def _design(book_id: str, c: dict, k: int, hint: dict | None = None) -> dict:
 def _plan_voice(book_id: str, c: dict, k: int) -> dict:
     """Reserve a slot for a character's voice during script analysis WITHOUT running the GPU voice-design model.
     The actual WAV is generated lazily by _ensure_designed() just before the first render or redesign."""
-    prompt = tts.voice_prompt(c, k)
+    prompt = tts.voice_prompt(c, k, accent=_accent(book_id))
     wav = DATA / book_id / "voices" / f"{uuid.uuid4().hex[:8]}.wav"   # path chosen now, file written later
     return {"voice": "clone:" + str(wav.relative_to(tts.ROOT)), "desc": prompt, "traits": c.get("voice", ""), "gender": c.get("gender", "unknown"),
             "age": c.get("age", "unknown"), "guessed": c.get("gender") not in ("male", "female") or not c.get("voice"), "pitch": 0, "pending": True}
@@ -350,8 +384,13 @@ def analyze(book_id: str, n: int):
         def annotate_tick(d, t, msg=""):
             last[:] = [d, t]
             progress(d, t, msg)
-        annotate.ensure_loaded()
-        s = annotate.annotate_chapter(ch["text"], progress=annotate_tick, about=_about(book_id))
+        mf = _dir(book_id) / "meta.json"
+        nonfiction = mf.exists() and json.loads(mf.read_text()).get("kind") == "nonfiction"
+        if nonfiction:   # one narrator: no LLM pass, so it is instant
+            s = annotate.plain_chapter(ch["text"])
+        else:
+            annotate.ensure_loaded()
+            s = annotate.annotate_chapter(ch["text"], progress=annotate_tick, about=_about(book_id))
         out.mkdir(parents=True, exist_ok=True)
         s = _apply_aliases(book_id, s)
         cast = _book_cast(book_id)  # one voice per character for the whole book: only characters not seen before get planned
@@ -365,7 +404,7 @@ def analyze(book_id: str, n: int):
         lines = annotate.frame(ch["title"], s["lines"], ch.get("part", ""))
         (out / "script.json").write_text(json.dumps({
             "title": ch["title"], "characters": s["characters"], "cast": {"Narrator": tts.NARRATOR_VOICE, **{c["name"]: cast[c["name"]]["voice"] for c in s["characters"]}},
-            "lines": lines, "music": MUSIC_ON, "setting": ""}, indent=1))
+            "lines": lines, "music": MUSIC_ON, "setting": "", "sfx": not nonfiction, "tempo": tts.TEMPO if nonfiction else 1.0}, indent=1))
     return _job(f"{book_id}:{n}:analyze", work)
 
 
@@ -375,7 +414,7 @@ def get_script(book_id: str, n: int):
     if not f.exists():
         raise HTTPException(404, "not analyzed yet")
     bc = _book_cast(book_id)
-    return {**json.loads(f.read_text()), "guessed": [k for k, v in bc.items() if v.get("guessed")], "notes": {k: v.get("notes", "") for k, v in bc.items()},
+    return {**json.loads(f.read_text()), "guessed": [k for k, v in bc.items() if v.get("guessed")], "notes": {**{k: v.get("notes", "") for k, v in bc.items()}, "Narrator": _meta(book_id).get("narrator_notes", "")},
             "narrator_also": [k for k, v in _aliases(book_id).items() if v == "Narrator"]}
 
 
@@ -452,6 +491,18 @@ class Redesign(BaseModel):
     notes: str = ""
 
 
+@app.post("/api/books/{book_id}/narrator/redesign")
+def redesign_narrator(book_id: str, body: Redesign):
+    """Describe the narrator ("old woman, soft, Irish") and design a fresh voice for this book; blank notes (and no accent) = the default narrator."""
+    meta = _meta(book_id)
+    meta["narrator_notes"] = body.notes.strip()[:500]   # calibration knob: ~4 sentences; lower it if later traits get ignored
+    meta.pop("narrator_ref", None)
+    (DATA / book_id / "meta.json").write_text(json.dumps(meta))
+    with LOCK:
+        _use_narrator(book_id)
+    return {"notes": meta["narrator_notes"]}
+
+
 @app.post("/api/books/{book_id}/cast/{name}/redesign")
 def redesign(book_id: str, name: str, body: Redesign = Redesign()):
     """New voice for one character. With notes ("older, gravelly, Scottish") the notes replace the AI's description; without,
@@ -484,11 +535,14 @@ class Preview(BaseModel):
     voice: str
     emotion: str = "calm"
     text: str = "I never thought I would see you again, not after everything that happened."
+    book: str = ""
 
 
 @app.post("/api/preview")
 def preview(p: Preview):
     with LOCK:
+        if p.voice == tts.NARRATOR_VOICE and p.book:
+            _use_narrator(p.book)
         # If the requested voice is a clone that hasn't been generated yet (pending from analyze),
         # generate it now on-demand. The GPU lock is already held, so this is safe.
         if p.voice.startswith("clone:"):
@@ -521,18 +575,28 @@ def render(book_id: str, n: int):
     def work(progress):
         # Generate any voice WAVs that were only planned (not yet designed) during script analysis.
         _ensure_designed(book_id, progress)
+        _use_narrator(book_id, progress)
         script = json.loads((out / "script.json").read_text())
-        wav = tts.render(script["lines"], script["cast"], out, progress=progress)
+        tempo = script.get("tempo", 1.0)   # non-fiction books are read a little slower
+        wav = tts.render(script["lines"], script["cast"], out, progress=progress, tempo=tempo)
         audio = sf.read(wav, dtype="float32")[0]
-        sp = tts.spans(script["lines"], script["cast"], out)
-        if script.get("sfx", True):   # sound effects named in the text (a knock, a bark); lines carry them from the analysis. First: they open gaps and shift the timeline
-            audio, sp = sfx.add(audio, script["lines"], sp, DATA / "sfx_cache")
-        if MUSIC_ON and script.get("music"):
+        sp = tts.spans(script["lines"], script["cast"], out, tempo)
+        nl = len(script["lines"])   # the bar counts voice lines, then sound clips, so it keeps moving after the last line
+        sfx.prepare(script["lines"], DATA / "sfx_cache",   # one TangoFlux run for every missing effect and bed
+                    lambda d, t: progress(nl + d, nl + t, f"Sound effects {d} of {t}"))
+        progress(nl, nl, "Mixing and saving")
+        zero = np.zeros_like(audio)
+        fx = sfx.add(zero, script["lines"], sp, DATA / "sfx_cache", overlay=True)[0] if script.get("sfx", True) else zero   # effects under the voice
+        fx = sfx.chimes(fx, script["lines"], sp)   # a soft bell before takeaway lines
+        bed = sfx.beds(zero, script["lines"], sp, DATA / "sfx_cache")   # scene ambience under the voices
+        audio = sfx.stereo(audio, fx, bed, script["lines"], sp)
+        if MUSIC_ON and script.get("music") and script.get("sfx", True):   # quiet mood music; never for non-fiction (sfx is off there)
             cues = music.cues(script["lines"], sp)
             (out / "cues.json").write_text(json.dumps(cues))
-            audio = music.mix(audio, sp, cues, MUSIC_CACHE, script.get("setting", ""))
+            m = music.mix(np.zeros(len(audio), np.float32), sp, cues, MUSIC_CACHE, script.get("setting", ""))
+            audio = np.clip(audio + (m[:, None] if audio.ndim == 2 else m), -1, 1)
         sf.write(out / "final.wav", audio, tts.SR)
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(out / "final.wav"), "-codec:a", "libmp3lame",
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(out / "final.wav"), "-af", "acompressor=threshold=-24dB:ratio=3,loudnorm=I=-18:TP=-1.5:LRA=7", "-codec:a", "libmp3lame",
                         "-q:a", "2", str(out / "chapter.mp3")], check=True)
     return _job(f"{book_id}:{n}:render", work)
 
@@ -553,6 +617,27 @@ def job_cancel(book_id: str, n: int, kind: str):
 @app.get("/api/jobs/{book_id}/{n}/{kind}")
 def job_status(book_id: str, n: int, kind: str):
     return JOBS.get(f"{book_id}:{n}:{kind}", {"state": "idle", "done": 0, "total": 1, "msg": ""})
+
+
+@app.delete("/api/books/{book_id}")
+def delete_book(book_id: str):
+    d = _dir(book_id)
+    if any(k.startswith(f"{book_id}:") for k in JOBS if JOBS[k].get("state") == "running"):
+        raise HTTPException(409, "a job is running for this book")
+    shutil.rmtree(d)
+    return {"ok": True}
+
+
+@app.delete("/api/books/{book_id}/chapters/{n}")
+def delete_chapter_output(book_id: str, n: int, what: str = "audio"):
+    """what=audio drops the rendered mp3/wav (script kept); what=all also drops the script and line cache."""
+    d = _dir(book_id, n)
+    if what == "all":
+        shutil.rmtree(d, ignore_errors=True)
+    else:
+        for f in ("chapter.mp3", "chapter.wav", "final.wav"):
+            (d / f).unlink(missing_ok=True)
+    return {"ok": True}
 
 
 @app.get("/api/books/{book_id}/chapters/{n}/audio")

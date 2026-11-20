@@ -251,3 +251,31 @@ def test_queue_runs_same_kind_together_and_cancel_removes_waiting():
         if main.JOBS["q:2:analyze"]["state"] == "done": break
         time.sleep(0.1)
     assert ran == [1, 3, 2]   # the other render goes before the script; the cancelled one never runs
+
+
+def test_nonfiction_book_gets_one_narrator_and_no_effects(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DATA", tmp_path / "data")
+    monkeypatch.setattr(main.annotate, "annotate_chapter", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no LLM pass for non-fiction")))
+    c = TestClient(main.app)
+    p = tmp_path / "b.epub"; make_epub(p)
+    bid = c.post("/api/books", files={"file": ("b.epub", p.read_bytes())}).json()["id"]
+    assert c.put(f"/api/books/{bid}/about", json={"title": "T", "kind": "nonfiction"}).json()["kind"] == "nonfiction"
+    c.post(f"/api/books/{bid}/chapters/1/analyze")
+    assert wait(c, bid, 1, "analyze")["state"] == "done"
+    s = c.get(f"/api/books/{bid}/chapters/1/script").json()
+    assert s["characters"] == [] and list(s["cast"]) == ["Narrator"] and {l["speaker"] for l in s["lines"]} == {"Narrator"}
+    assert (main.DATA / bid / "ch01" / "script.json").read_text().count('"sfx": false') == 1
+
+
+def test_delete_chapter_audio_then_book(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DATA", tmp_path / "data")
+    c = TestClient(main.app)
+    p = tmp_path / "b.epub"; make_epub(p)
+    bid = c.post("/api/books", files={"file": ("b.epub", p.read_bytes())}).json()["id"]
+    ch = main.DATA / bid / "ch01"; ch.mkdir()
+    (ch / "script.json").write_text("{}"); (ch / "chapter.mp3").write_bytes(b"x")
+    c.delete(f"/api/books/{bid}/chapters/1")
+    assert (ch / "script.json").exists() and not (ch / "chapter.mp3").exists()
+    c.delete(f"/api/books/{bid}/chapters/1?what=all")
+    assert not ch.exists()
+    assert c.delete(f"/api/books/{bid}").status_code == 200 and c.get("/api/books").json() == []

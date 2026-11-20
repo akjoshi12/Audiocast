@@ -23,6 +23,19 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    lint {
+        // The app has no Fragments; this rule only sees the transitive Fragment version. Every other lint check stays on.
+        disable += "InvalidFragmentVersionForActivityResult"
+    }
+    buildTypes {
+        // Debug builds run Compose with extra checks and no ahead-of-time compilation, which feels laggy. Release is for daily use: `./gradlew installRelease`.
+        release {
+            signingConfig = signingConfigs.getByName("debug")   // ponytail: debug-key signing, fine for a personal sideload
+            isMinifyEnabled = true        // R8: drops unused classes and icons; library consumer rules cover Room, Media3, OkHttp
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
     buildFeatures { compose = true }
     testOptions { unitTests.isReturnDefaultValues = true }
 }

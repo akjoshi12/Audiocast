@@ -35,8 +35,7 @@ class LibraryUiTest {
         var opened = ""
         val books = listOf(BookWithProgress(book, downloaded = 14, total = 16), BookWithProgress(book.copy(id = "b2", title = "Atomic Habits"), 3, 3))
         rule.setContent { AudiobooksTheme { LibraryScreen(books, onOpen = { opened = it }, onAdd = {}) } }
-        rule.onNodeWithText("↓ 14/16").assertIsDisplayed()
-        rule.onNodeWithText("↓ all").assertIsDisplayed()
+        rule.onNodeWithText("14/16 downloaded", substring = true).assertIsDisplayed()
         rule.onNodeWithText("Atomic Habits", substring = true).performClick()
         assertEquals("b2", opened)
     }

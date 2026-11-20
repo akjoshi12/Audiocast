@@ -88,7 +88,7 @@ def test_mix_survives_float_rounding_of_cue_length(tmp_path, monkeypatch):
 
 
 def test_music_is_audible_under_speech(tmp_path, monkeypatch):
-    """Chapter 1 shipped with the bed ~19 dB under the voice and the listener heard no music at all: keep it within 12.5 dB."""
+    """Quiet but present: ~24 dB under the voice was picked by ear (-12 dB was too loud, an earlier ~-19 dB mix on phone went unheard)."""
     monkeypatch.setattr(music, "bed", lambda mood, s, cache, setting="": np.full(int(s * SR), 0.1, np.float32))  # real beds are normalised to rms 0.1
     out = music.mix(np.zeros(SR * 40, np.float32), [(0, 40)], [{"mood": "calm", "start": 0, "end": 40}], tmp_path)
-    assert out[SR * 20] > 0.1 * 10 ** (-12.5 / 20)
+    assert 0.1 * 10 ** (-26 / 20) < out[SR * 20] < 0.1 * 10 ** (-20 / 20)

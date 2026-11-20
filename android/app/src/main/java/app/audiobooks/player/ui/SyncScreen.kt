@@ -22,14 +22,14 @@ import java.util.Date
 @Composable
 fun SyncScreen(status: SyncStatus, paired: Boolean, onPair: () -> Unit, onSyncNow: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(24.dp), Arrangement.spacedBy(10.dp)) {
-        Text("Sync", fontSize = 30.sp, fontWeight = FontWeight.Bold)
-        Text(syncHeadline(status, paired), fontSize = 18.sp, color = if (status.last is SyncResult.NeedsRepair || status.last is SyncResult.StorageFull) Accent else androidx.compose.ui.graphics.Color.White)
+        Text("Sync", fontFamily = Serif, fontSize = 32.sp, fontWeight = FontWeight.Medium)
+        Text(syncHeadline(status, paired), fontSize = 18.sp, color = if (status.last is SyncResult.NeedsRepair || status.last is SyncResult.StorageFull) Accent else Text1)
         status.current?.let { Text("Downloading: $it", color = Muted, fontSize = 13.sp) }
         status.lastAt?.let { Text("Last sync: " + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it)), color = Muted, fontSize = 13.sp) }
         if (!paired || status.last is SyncResult.NeedsRepair) {
-            Button(onPair, colors = ButtonDefaults.buttonColors(containerColor = Accent)) { Text("Pair with PC") }
+            Button(onPair, colors = ButtonDefaults.buttonColors(containerColor = Text1, contentColor = Ink)) { Text("Pair with PC") }
         }
-        if (paired) OutlinedButton(onSyncNow, enabled = !status.running) { Text("Sync now", color = Accent) }
+        if (paired) OutlinedButton(onSyncNow, enabled = !status.running) { Text("Sync now") }
         Text("The phone syncs by itself when it is on your home wifi and the PC app is running. Downloaded chapters play without any connection.", color = Muted, fontSize = 12.sp)
     }
 }

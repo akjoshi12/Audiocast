@@ -317,3 +317,33 @@ def test_progress_is_monotonic_and_ends_at_total(monkeypatch):
 def test_progress_optional_and_no_emphasis(monkeypatch):
     r, *_ = _fake_run(monkeypatch, None)
     assert all("emphasis" not in l for l in r["lines"])
+
+
+def test_bad_sound_filter_drops_voice_like_and_hissy_prompts():
+    from app.annotate import BAD_SOUND
+    assert all(BAD_SOUND.search(x) for x in ["muffled voices of people whispering", "television static and a clock", "a news anchor", "radio murmuring"])
+    assert not any(BAD_SOUND.search(x) for x in ["windscreen wipers swishing, engine hum", "a clock ticking", "a toddler crying in a kitchen"])
+
+
+def test_split_lead_gives_the_colon_lead_in_to_the_narrator():
+    from app.annotate import split_lead
+    u = {"kind": "speech", "speaker": "Old Wizard", "emotion": "warm", "pause_after": 0.5, "text": "a wide smile and he said in a squeaky voice that made people stare: ‘Don’t be sorry, my dear sir.’"}
+    a, b = split_lead(u)
+    assert (a["speaker"], a["kind"], a["text"].endswith("stare")) == ("Narrator", "narration", True)
+    assert b["speaker"] == "Old Wizard" and b["text"].startswith("‘Don")
+    assert split_lead({**u, "text": "‘Fine,’ he said: ‘really.’"}) == [{**u, "text": "‘Fine,’ he said: ‘really.’"}]   # starts with a quote: nothing to cut
+
+
+def test_plain_chapter_is_one_narrator_with_headings_and_paragraph_pauses():
+    from app.annotate import plain_chapter
+    r = plain_chapter("The Power of Habit\n\nHabits shape us. They run quietly in the background.\n\n“Small steps matter,” she said. Start today.")
+    L = r["lines"]
+    assert r["characters"] == [] and {l["speaker"] for l in L} == {"Narrator"}
+    assert L[0]["kind"] == "heading" and L[0]["text"] == "The Power of Habit"
+    assert all(l["kind"] == "narration" for l in L[1:]) and L[1]["pause_after"] == 0.9
+
+
+def test_plain_chapter_marks_takeaway_callouts_for_a_chime():
+    from app.annotate import plain_chapter
+    L = plain_chapter("Key Takeaways\n\nHabits shape us.\n\nRemember: small steps add up.\n\nRemember that this takes time.")["lines"]
+    assert [bool(l.get("chime")) for l in L] == [True, False, True, False]

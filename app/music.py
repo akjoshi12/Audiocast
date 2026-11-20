@@ -10,7 +10,7 @@ from app.tts import SR
 
 MODEL_ID = "facebook/musicgen-small"
 CLIP_TOKENS = 1024        # ~20 s per generated clip (50 tokens/s)
-BASE_DB, DUCK_DB = -7.0, -5.0  # music vs speech: -7 dB in gaps, -12 dB under speech (was -13/-19 and still not heard on a phone)
+BASE_DB, DUCK_DB = -18.0, -6.0  # music vs speech: -18 dB in gaps, -24 dB under speech (-7/-5 was too loud; picked by ear on HP ch05, music_test/)
 FADE_S, MIN_CUE_S = 2.0, 25.0
 QUIET, MAX_CUE_S = ("calm", "none", ""), 75.0   # calm stretches get no music; a cue fades out after MAX_CUE_S (tune by ear)
 

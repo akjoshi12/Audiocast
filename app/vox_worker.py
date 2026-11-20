@@ -15,7 +15,8 @@ print(json.dumps({"ready": sr}), file=proto, flush=True)
 for line in sys.stdin:
     j = json.loads(line)
     try:
-        sf.write(j["out"], np.asarray(m.generate(text=j["text"], reference_wav_path=j["ref"], cfg_value=2.0, inference_timesteps=10), dtype=np.float32), sr)
+        kw = {"prompt_wav_path": j["ref"], "prompt_text": j["prompt_text"]} if j.get("prompt_text") else {}   # continuation cloning: keeps one timbre across takes
+        sf.write(j["out"], np.asarray(m.generate(text=j["text"], reference_wav_path=j["ref"], cfg_value=2.0, inference_timesteps=10, **kw), dtype=np.float32), sr)
         r = {"ok": True, "sr": sr}
     except Exception as e:  # one bad line must not kill the render
         traceback.print_exc()   # to server.log: the reply below only carries the message

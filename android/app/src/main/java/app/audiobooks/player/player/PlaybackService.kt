@@ -1,5 +1,6 @@
 package app.audiobooks.player.player
 
+import android.app.PendingIntent
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -7,6 +8,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import app.audiobooks.player.MainActivity
 
 /** Owns the ExoPlayer and its media session: playback survives the screen turning off, the app leaving the screen, headphone and lock-screen buttons. */
 class PlaybackService : MediaSessionService() {
@@ -21,7 +23,12 @@ class PlaybackService : MediaSessionService() {
             .setSeekBackIncrementMs(15_000)
             .setSeekForwardIncrementMs(30_000)
             .build()
-        session = MediaSession.Builder(this, player).build()
+        // tapping the notification / lock-screen card opens the chapter page; without this the tap does nothing
+        val open = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java).putExtra(MainActivity.OPEN_PLAYER, true),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        session = MediaSession.Builder(this, player).setSessionActivity(open).build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
